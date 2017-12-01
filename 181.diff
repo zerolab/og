@@ -1,0 +1,2198 @@
+diff --git a/config/schema/og.schema.yml b/config/schema/og.schema.yml
+index 0f1dc9ce..686b1de4 100644
+--- a/config/schema/og.schema.yml
++++ b/config/schema/og.schema.yml
+@@ -1,25 +1,3 @@
+-field.storage_settings.og_membership_reference:
+-  type: mapping
+-  label: 'Organic Groups reference field storage settings'
+-  mapping:
+-    target_type:
+-      type: string
+-      label: 'Type of entity to reference'
+-
+-field.field_settings.og_membership_reference:
+-  type: mapping
+-  label: 'Organic Groups reference field settings'
+-  mapping:
+-    handler:
+-      type: string
+-      label: 'Reference method'
+-    handler_settings:
+-      type: entity_reference_selection.[%parent.handler]
+-      label: 'Organic Groups reference selection plugin settings'
+-    access_override:
+-      type: boolean
+-      label: 'Access Override'
+-
+ field.storage_settings.og_standard_reference:
+   type: mapping
+   label: 'Organic Groups reference field storage settings'
+@@ -38,9 +16,6 @@ field.field_settings.og_standard_reference:
+     handler_settings:
+       type: entity_reference_selection.[%parent.handler]
+       label: 'Organic Groups reference selection plugin settings'
+-    access_override:
+-      type: boolean
+-      label: 'Access Override'
+ 
+ og.settings:
+   type: config_object
+@@ -132,20 +107,6 @@ og.og_role.*:
+       type: string
+       label: 'Role type'
+ 
+-field.widget.settings.og_complex:
+-  type: mapping
+-  label: 'OG Group Audience field widget'
+-  mapping:
+-    match_operator:
+-      type: string
+-      label: 'Autocomplete matching'
+-    size:
+-      type: integer
+-      label: 'Size of textfield'
+-    placeholder:
+-      type: label
+-      label: 'Placeholder'
+-
+ views.field.og_membership_bulk_form:
+   type: views_field_bulk_form
+   label: 'OG Membership bulk form'
+diff --git a/og.module b/og.module
+index 2673ba2d..b04d2ed3 100755
+--- a/og.module
++++ b/og.module
+@@ -118,6 +118,7 @@ function og_entity_delete(EntityInterface $entity) {
+  * Implements hook_entity_access().
+  */
+ function og_entity_access(EntityInterface $entity, $operation, AccountInterface $account) {
++
+   // Grant access to view roles, so that they can be shown in listings.
+   if ($entity instanceof OgRoleInterface && $operation == 'view') {
+     return AccessResult::allowed();
+@@ -146,6 +147,21 @@ function og_entity_access(EntityInterface $entity, $operation, AccountInterface
+   /** @var \Drupal\Core\Access\AccessResult $access */
+   $access = \Drupal::service('og.access')->userAccessEntity($operation, $entity, $account);
+ 
++  $audience_fields = \Drupal::service('og.group_audience_helper')->getAllGroupAudienceFields($entity_type_id, $bundle_id);
++  if (count($audience_fields) === 1) {
++    $field_definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions($entity_type_id, $bundle_id);
++    foreach ($field_definitions as $field_name => $field_definition) {
++
++      /** @var \Drupal\Core\Field\FieldDefinitionInterface $field_definition */
++      if (!in_array($field_definition->getName(), array_keys($audience_fields))) {
++        continue;
++      }
++
++      // Check if the field need to be required.
++      $field_definition->setRequired($access);
++    }
++  }
++
+   if ($access->isAllowed()) {
+     return $access;
+   }
+@@ -166,6 +182,11 @@ function og_entity_access(EntityInterface $entity, $operation, AccountInterface
+ function og_entity_create_access(AccountInterface $account, array $context, $bundle) {
+   $entity_type_id = $context['entity_type_id'];
+ 
++  if (!empty($context['skip_og_permission'])) {
++    // We already been here or want to skip the access checking.
++    return;
++  }
++
+   if (!Og::isGroupContent($entity_type_id, $bundle)) {
+     // Not a group content.
+     return AccessResult::neutral();
+@@ -190,17 +211,32 @@ function og_entity_create_access(AccountInterface $account, array $context, $bun
+   // @see \Drupal\og\Plugin\EntityReferenceSelection\OgSelection::buildEntityQuery()
+   $required = FALSE;
+ 
++  /** @var \Drupal\og\OgGroupAudienceHelperInterface $audience_helper */
++  $audience_helper = \Drupal::service('og.group_audience_helper');
++  $audience_fields = $audience_helper->getAllGroupAudienceFields($entity_type_id, $bundle);
+   $field_definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions($entity_type_id, $bundle);
++
+   foreach ($field_definitions as $field_name => $field_definition) {
+     /** @var \Drupal\Core\Field\FieldDefinitionInterface $field_definition */
+-    if (!\Drupal::service('og.group_audience_helper')->isGroupAudienceField($field_definition)) {
++    if (!in_array($field_definition->getName(), array_keys($audience_fields))) {
+       continue;
+     }
+ 
+-    $handler = Og::getSelectionHandler($field_definition);
++    if (count($audience_fields) === 1) {
++      // Set the field to required only if we have a single audience field. If
++      // we multiple fields then the require logic will perform at the entity
++      // constraint level.
++      $field_definition->setRequired(!\Drupal::entityTypeManager()
++        ->getAccessControlHandler($entity_type_id)
++        ->createAccess($bundle, $account, ['skip_og_permission' => TRUE]));
++    }
+ 
+-    if ($handler->getReferenceableEntities()) {
+-      return AccessResult::neutral();
++    $handler = Og::getSelectionHandler($field_definition);
++    if ($handler->countReferenceableEntities()) {
++      // At least one of the fields has a referenceable groups. That mean that
++      // the user can create a group content when reference the group content in
++      // at least one the fields.
++      return AccessResult::allowed();
+     }
+ 
+     // Allow users to create content outside of groups, if none of the
+@@ -271,22 +307,40 @@ function og_field_formatter_info_alter(array &$info) {
+  * Implements hook_field_widget_info_alter().
+  */
+ function og_field_widget_info_alter(array &$info) {
+-  $info['options_buttons']['field_types'][] = OgGroupAudienceHelperInterface::GROUP_REFERENCE;
++  $field_types = [
++    'entity_reference_autocomplete',
++    'entity_reference_autocomplete_tags',
++    'options_buttons',
++    'options_select',
++  ];
++
++  foreach ($field_types as $field_type) {
++    $info[$field_type]['field_types'][] = OgGroupAudienceHelperInterface::GROUP_REFERENCE;
++  }
+ }
+ 
+ /**
+  * Implements hook_entity_type_alter().
+- *
+- * Add link template to groups. We add it to all the entity types, and later on
+- * return the correct access, depending if the bundle is indeed a group and
+- * accessible. We do not filter here the entity type by groups, so whenever
+- * GroupTypeManager::addGroup is called, it's enough to mark route to be rebuilt
+- * via RouteBuilder::setRebuildNeeded.
+  */
+ function og_entity_type_alter(array &$entity_types) {
++
+   /** @var \Drupal\Core\Entity\EntityTypeInterface $entity_type */
+   foreach ($entity_types as $entity_type_id => $entity_type) {
++
++    // Add link template to groups. We add it to all the entity types, and later
++    // on return the correct access, depending if the bundle is indeed a group
++    // and accessible. We do not filter here the entity type by groups, so
++    // whenever GroupTypeManager::addGroup is called, it's enough to mark route
++    // to be rebuilt via RouteBuilder::setRebuildNeeded.
+     $entity_type->setLinkTemplate('og-admin-routes', "/group/$entity_type_id/{{$entity_type_id}}/admin");
++
++    // We won't check if an entity might be a group content because we need to
++    // check if that entity has any bundle that could be group entity and this
++    // would cause a recursion. Adding the constraint validation and we will
++    // check there if the entity is a group content or not.
++    if ($entity_type->entityClassImplements(ContentEntityInterface::class)) {
++      $entity_type->addConstraint('ValidOgMembershipMultipleReference');
++    }
+   }
+ }
+ 
+diff --git a/src/Entity/OgMembership.php b/src/Entity/OgMembership.php
+index 69f179c5..a66d695d 100644
+--- a/src/Entity/OgMembership.php
++++ b/src/Entity/OgMembership.php
+@@ -392,10 +392,12 @@ public function preSave(EntityStorageInterface $storage) {
+       }
+     }
+ 
++    $uid = $this->get('uid')->target_id;
++
+     // Check for an existing membership.
+     $query = \Drupal::entityQuery('og_membership');
+     $query
+-      ->condition('uid', $this->get('uid')->target_id)
++      ->condition('uid', $uid)
+       ->condition('entity_id', $this->get('entity_id')->value)
+       ->condition('entity_type', $this->get('entity_type')->value);
+ 
+@@ -410,7 +412,7 @@ public function preSave(EntityStorageInterface $storage) {
+       ->execute();
+ 
+     if ($count) {
+-      throw new \LogicException(sprintf('An OG membership already exists for group of entity-type %s and ID: %s', $entity_type_id, $this->getGroup()->id()));
++      throw new \LogicException(sprintf('An OG membership already exists for user ID %d and group of entity-type %s and ID %s', $uid, $entity_type_id, $this->getGroup()->id()));
+     }
+ 
+     parent::preSave($storage);
+@@ -424,7 +426,6 @@ public function save() {
+ 
+     // Reset internal cache.
+     Og::reset();
+-    \Drupal::service('og.access')->reset();
+ 
+     // Invalidate the group membership manager.
+     \Drupal::service('og.membership_manager')->reset();
+diff --git a/src/GroupTypeManager.php b/src/GroupTypeManager.php
+index 9ae73092..a79fc5a2 100644
+--- a/src/GroupTypeManager.php
++++ b/src/GroupTypeManager.php
+@@ -227,9 +227,23 @@ public function getGroupsForEntityType($entity_type_id) {
+    *   An associative array, keyed by entity type, each value an indexed array
+    *   of bundle IDs.
+    */
+-  public function getAllGroupBundles($entity_type = NULL) {
++  public function getAllGroupBundles() {
++    // Todo - should be remove since this method don't do any thing.
++    return $this->getGroupMap();
++  }
++
++  /**
++   * Get group bundles of an entity type.
++   *
++   * @param string $entity_type_id
++   *   The entity type ID.
++   *
++   * @return array
++   *   An associative array of bundle IDs, or an empty array if none found.
++   */
++  public function getGroupBundlesByEntityType($entity_type_id) {
+     $group_map = $this->getGroupMap();
+-    return !empty($group_map[$entity_type]) ? $group_map[$entity_type] : $group_map;
++    return isset($group_map[$entity_type_id]) ? $group_map[$entity_type_id] : [];
+   }
+ 
+   /**
+diff --git a/src/Og.php b/src/Og.php
+index a7017242..f025281d 100644
+--- a/src/Og.php
++++ b/src/Og.php
+@@ -371,8 +371,6 @@ protected static function getFieldBaseDefinition($plugin_id) {
+    *
+    * @param \Drupal\Core\Field\FieldDefinitionInterface $field_definition
+    *   The field definition.
+-   * @param array $options
+-   *   Overriding the default options of the selection handler.
+    *
+    * @return \Drupal\og\Plugin\EntityReferenceSelection\OgSelection
+    *   Returns the OG selection handler.
+@@ -381,22 +379,28 @@ protected static function getFieldBaseDefinition($plugin_id) {
+    *   Thrown when the passed in field definition is not of a group audience
+    *   field.
+    */
+-  public static function getSelectionHandler(FieldDefinitionInterface $field_definition, array $options = []) {
++  public static function getSelectionHandler(FieldDefinitionInterface $field_definition) {
+     if (!\Drupal::service('og.group_audience_helper')->isGroupAudienceField($field_definition)) {
+       $field_name = $field_definition->getName();
+-      throw new \Exception("The field $field_name is not an audience field.");
++      throw new \Exception("The field $field_name is not a group audience field.");
+     }
+ 
+-    $options = NestedArray::mergeDeep([
++    $entity_type_id = $field_definition->getTargetEntityTypeId();
++    $definition = \Drupal::entityTypeManager()->getDefinition($entity_type_id);
++
++    $values = [];
++    if ($bundle_key = $definition->getKey('bundle')) {
++      $values[$bundle_key] = $field_definition->getTargetBundle();
++    }
++
++    $entity = \Drupal::entityTypeManager()->getStorage($entity_type_id)->create($values);
++
++    $options = [
+       'target_type' => $field_definition->getFieldStorageDefinition()->getSetting('target_type'),
+       'handler' => $field_definition->getSetting('handler'),
+-      'handler_settings' => [
+-        'field_mode' => 'default',
+-      ],
+-    ], $options);
+-
+-    // Deep merge the handler settings.
+-    $options['handler_settings'] = NestedArray::mergeDeep($field_definition->getSetting('handler_settings'), $options['handler_settings']);
++      'handler_settings' => $field_definition->getSetting('handler_settings'),
++      'entity' => $entity,
++    ];
+ 
+     return \Drupal::service('plugin.manager.entity_reference_selection')->createInstance('og:default', $options);
+   }
+@@ -406,6 +410,9 @@ public static function getSelectionHandler(FieldDefinitionInterface $field_defin
+    */
+   public static function reset() {
+     static::$cache = [];
++
++    \Drupal::service('og.access')->reset();
++    \Drupal::service('og.membership_manager')->reset();
+   }
+ 
+ }
+diff --git a/src/Plugin/EntityReferenceSelection/OgSelection.php b/src/Plugin/EntityReferenceSelection/OgSelection.php
+index 85928a16..6cc99bd8 100644
+--- a/src/Plugin/EntityReferenceSelection/OgSelection.php
++++ b/src/Plugin/EntityReferenceSelection/OgSelection.php
+@@ -2,9 +2,16 @@
+ 
+ namespace Drupal\og\Plugin\EntityReferenceSelection;
+ 
++use Drupal\Core\Entity\EntityManagerInterface;
+ use Drupal\Core\Entity\Plugin\EntityReferenceSelection\DefaultSelection;
++use Drupal\Core\Extension\ModuleHandlerInterface;
++use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\Session\AccountInterface;
++use Drupal\og\MembershipManagerInterface;
++use Drupal\og\OgAccessInterface;
+ use Drupal\user\Entity\User;
+ use Drupal\og\Og;
++use Symfony\Component\DependencyInjection\ContainerInterface;
+ 
+ /**
+  * Provide default OG selection handler.
+@@ -25,6 +32,62 @@
+  */
+ class OgSelection extends DefaultSelection {
+ 
++  /**
++   * The OG access service.
++   *
++   * @var \Drupal\og\OgAccessInterface
++   */
++  protected $OgAccess;
++
++  /**
++   * The OG membership manager.
++   *
++   * @var \Drupal\og\MembershipManagerInterface
++   */
++  protected $OgMembershipManager;
++
++  /**
++   * Constructs a new SelectionBase object.
++   *
++   * @param array $configuration
++   *   A configuration array containing information about the plugin instance.
++   * @param string $plugin_id
++   *   The plugin_id for the plugin instance.
++   * @param mixed $plugin_definition
++   *   The plugin implementation definition.
++   * @param \Drupal\Core\Entity\EntityManagerInterface $entity_manager
++   *   The entity manager service.
++   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
++   *   The module handler service.
++   * @param \Drupal\Core\Session\AccountInterface $current_user
++   *   The current user.
++   * @param \Drupal\og\OgAccessInterface $og_access
++   *   The OG access service.
++   * @param \Drupal\og\MembershipManagerInterface $og_membership_manager
++   *   The OG membership service.
++   */
++  public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityManagerInterface $entity_manager, ModuleHandlerInterface $module_handler, AccountInterface $current_user, OgAccessInterface $og_access, MembershipManagerInterface $og_membership_manager) {
++    parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_manager, $module_handler, $current_user);
++    $this->OgAccess = $og_access;
++    $this->OgMembershipManager = $og_membership_manager;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
++    return new static(
++      $configuration,
++      $plugin_id,
++      $plugin_definition,
++      $container->get('entity.manager'),
++      $container->get('module_handler'),
++      $container->get('current_user'),
++      $container->get('og.access'),
++      $container->get('og.membership_manager')
++    );
++  }
++
+   /**
+    * Get the selection handler of the field.
+    *
+@@ -58,7 +121,6 @@ public function getSelectionHandler() {
+    *   it.
+    */
+   protected function buildEntityQuery($match = NULL, $match_operator = 'CONTAINS') {
+-
+     // Getting the original entity selection handler. OG selection handler using
+     // the default selection handler of the entity, which the field reference
+     // to, and add another logic to the query object i.e. check if the entities
+@@ -68,7 +130,7 @@ protected function buildEntityQuery($match = NULL, $match_operator = 'CONTAINS')
+     $definition = \Drupal::entityTypeManager()->getDefinition($target_type);
+ 
+     if ($bundle_key = $definition->getKey('bundle')) {
+-      $bundles = Og::groupTypeManager()->getAllGroupBundles($target_type);
++      $bundles = Og::groupTypeManager()->getGroupBundlesByEntityType($target_type);
+ 
+       if (!$bundles) {
+         // If there are no bundles defined, we can return early.
+@@ -77,37 +139,45 @@ protected function buildEntityQuery($match = NULL, $match_operator = 'CONTAINS')
+       $query->condition($bundle_key, $bundles, 'IN');
+     }
+ 
+-    $user_groups = $this->getUserGroups();
+-    if (!$user_groups) {
++    // Get the identifier key of the entity.
++    $identifier_key = $definition->getKey('id');
++
++    if ($this->currentUser->isAnonymous()) {
++      // @todo: Check if anonymous users should have access to any referenced
++      // groups? What about groups that allow anonymous posts?
++      return $query->condition($identifier_key, -1);
++    }
++
++    if ($this->currentUser->hasPermission('administer group')) {
++      // User can see all the groups.
+       return $query;
+     }
+ 
+-    $identifier_key = $definition->getKey('id');
++    if (empty($this->configuration['entity'])) {
++      // @todo: Find out why we have this scenario.
++      return $query;
++    }
++
++    /** @var \Drupal\Core\Entity\EntityInterface $entity */
++    $entity = $this->configuration['entity'];
++    $entity_type_id = $entity->getEntityTypeId();
++    $bundle = $entity->bundle();
+ 
+     $ids = [];
+-    if (!empty($this->configuration['handler_settings']['field_mode']) && $this->configuration['handler_settings']['field_mode'] == 'admin') {
+-      // Don't include the groups, the user doesn't have create permission.
+-      foreach ($user_groups as $delta => $group) {
++    foreach ($this->getUserGroups() as $group) {
++      // Check user has "create" permission on this entity.
++      if ($this->OgAccess->userAccess($group, "create $entity_type_id $bundle", $this->currentUser)->isAllowed()) {
+         $ids[] = $group->id();
+       }
++    }
+ 
+-      if ($ids) {
+-        $query->condition($identifier_key, $ids, 'NOT IN');
+-      }
++    if ($ids) {
++      $query->condition($identifier_key, $ids, 'IN');
+     }
+     else {
+-      // Determine which groups should be selectable.
+-      foreach ($user_groups as $group) {
+-        $ids[] = $group->id();
+-      }
+-      if ($ids) {
+-        $query->condition($identifier_key, $ids, 'IN');
+-      }
+-      else {
+-        // User doesn't have permission to select any group so falsify this
+-        // query.
+-        $query->condition($identifier_key, -1, '=');
+-      }
++      // User doesn't have permission to select any group so falsify this
++      // query.
++      $query->condition($identifier_key, -1);
+     }
+ 
+     return $query;
+@@ -121,10 +191,32 @@ protected function buildEntityQuery($match = NULL, $match_operator = 'CONTAINS')
+    */
+   protected function getUserGroups() {
+     $user = User::load($this->currentUser->id());
+-    /** @var \Drupal\og\MembershipManagerInterface $membership_manager */
+-    $membership_manager = \Drupal::service('og.membership_manager');
+-    $other_groups = $membership_manager->getUserGroups($user);
++    $other_groups = $this->OgMembershipManager->getUserGroups($user);
+     return isset($other_groups[$this->configuration['target_type']]) ? $other_groups[$this->configuration['target_type']] : [];
+   }
+ 
++  /**
++   * {@inheritdoc}
++   */
++  public function buildConfigurationForm(array $form, FormStateInterface $form_state) {
++    $form = parent::buildConfigurationForm($form, $form_state);
++
++    // Filter out the bundles that are not groups.
++    $entity_type_id = $this->configuration['target_type'];
++    $entity_type = $this->entityManager->getDefinition($entity_type_id);
++    $bundles_info = $this->entityManager->getBundleInfo($entity_type_id);
++
++    if ($entity_type->hasKey('bundle')) {
++
++      foreach (Og::groupTypeManager()->getGroupBundlesByEntityType($entity_type_id) as $bundle) {
++        $bundle_options[$bundle] = $bundles_info[$bundle]['label'];
++      }
++
++      natsort($bundle_options);
++      $form['target_bundles']['#options'] = $bundle_options;
++    }
++
++    return $form;
++  }
++
+ }
+diff --git a/src/Plugin/Field/FieldType/OgStandardReferenceItem.php b/src/Plugin/Field/FieldType/OgStandardReferenceItem.php
+index daa375b5..eb84e704 100644
+--- a/src/Plugin/Field/FieldType/OgStandardReferenceItem.php
++++ b/src/Plugin/Field/FieldType/OgStandardReferenceItem.php
+@@ -3,18 +3,17 @@
+ namespace Drupal\og\Plugin\Field\FieldType;
+ 
+ use Drupal\Core\Field\Plugin\Field\FieldType\EntityReferenceItem;
+-use Drupal\Core\Form\FormStateInterface;
+ 
+ /**
+  * Class OgStandardReferenceItem.
+  *
+  * @FieldType(
+  *   id = "og_standard_reference",
+- *   label = @Translation("OG membership reference"),
+- *   description = @Translation("An entity field containing an OG membership reference for a non-user entity."),
++ *   label = @Translation("OG reference"),
++ *   description = @Translation("An entity field containing an OG reference for a non-user entity."),
+  *   category = @Translation("Reference"),
+  *   no_ui = TRUE,
+- *   default_widget = "og_complex",
++ *   default_widget = "options_select",
+  *   default_formatter = "entity_reference_label",
+  *   list_class = "\Drupal\Core\Field\EntityReferenceFieldItemList",
+  *   constraints = {"ValidOgMembershipReference" = {}}
+@@ -22,31 +21,4 @@
+  */
+ class OgStandardReferenceItem extends EntityReferenceItem {
+ 
+-  /**
+-   * {@inheritdoc}
+-   */
+-  public static function defaultFieldSettings() {
+-    $settings = parent::defaultFieldSettings();
+-    $settings['access_override'] = FALSE;
+-
+-    return $settings;
+-  }
+-
+-  /**
+-   * {@inheritdoc}
+-   */
+-  public function fieldSettingsForm(array $form, FormStateInterface $form_state) {
+-    $form = parent::fieldSettingsForm($form, $form_state);
+-
+-    // Field access settings.
+-    $form['access_override'] = [
+-      '#title' => $this->t('Allow entity access to control field access'),
+-      '#description' => $this->t('By default, the <em>administer group</em> permission is required to directly edit this field. Selecting this option will allow access to anybody with access to edit the entity.'),
+-      '#type' => 'checkbox',
+-      '#default_value' => $this->getSetting('access_override'),
+-    ];
+-
+-    return $form;
+-  }
+-
+ }
+diff --git a/src/Plugin/Field/FieldWidget/OgComplex.php b/src/Plugin/Field/FieldWidget/OgComplex.php
+deleted file mode 100644
+index f168eed0..00000000
+--- a/src/Plugin/Field/FieldWidget/OgComplex.php
++++ /dev/null
+@@ -1,355 +0,0 @@
+-<?php
+-
+-namespace Drupal\og\Plugin\Field\FieldWidget;
+-
+-use Drupal\Component\Utility\Html;
+-use Drupal\Core\Entity\EntityInterface;
+-use Drupal\Core\Field\FieldFilteredMarkup;
+-use Drupal\Core\Field\FieldItemListInterface;
+-use Drupal\Core\Field\FieldStorageDefinitionInterface;
+-use Drupal\Core\Field\Plugin\Field\FieldWidget\EntityReferenceAutocompleteWidget;
+-use Drupal\Core\Form\FormStateInterface;
+-use Drupal\og\OgAccess;
+-use Drupal\user\Entity\User;
+-
+-/**
+- * Plugin implementation of the 'entity_reference autocomplete' widget.
+- *
+- * @FieldWidget(
+- *   id = "og_complex",
+- *   label = @Translation("OG reference"),
+- *   description = @Translation("An autocompletewidget for OG"),
+- *   field_types = {
+- *     "og_standard_reference",
+- *     "og_membership_reference"
+- *   }
+- * )
+- */
+-class OgComplex extends EntityReferenceAutocompleteWidget {
+-
+-  /**
+-   * {@inheritdoc}
+-   */
+-  public function formElement(FieldItemListInterface $items, $delta, array $element, array &$form, FormStateInterface $form_state) {
+-    $parent = parent::formElement($items, $delta, $element, $form, $form_state);
+-    // todo: fix the definition in th UI level.
+-    $parent['target_id']['#selection_handler'] = 'og:default';
+-    $parent['target_id']['#selection_settings']['field_mode'] = 'default';
+-
+-    return $parent;
+-  }
+-
+-  /**
+-   * {@inheritdoc}
+-   */
+-  public function form(FieldItemListInterface $items, array &$form, FormStateInterface $form_state, $get_delta = NULL) {
+-    $parent_form = parent::form($items, $form, $form_state, $get_delta);
+-
+-    $parent_form['other_groups'] = [];
+-
+-    // Adding the other groups widget.
+-    if ($this->isGroupAdmin()) {
+-      $parent_form['other_groups'] = $this->otherGroupsWidget($items, $form_state);
+-    }
+-
+-    return $parent_form;
+-  }
+-
+-  /**
+-   * Special handling to create form elements for multiple values.
+-   *
+-   * Handles generic features for multiple fields:
+-   * - number of widgets
+-   * - AHAH-'add more' button
+-   * - table display and drag-n-drop value reordering.
+-   */
+-  protected function formMultipleElements(FieldItemListInterface $items, array &$form, FormStateInterface $form_state) {
+-    $field_name = $this->fieldDefinition->getName();
+-    $cardinality = $this->fieldDefinition->getFieldStorageDefinition()->getCardinality();
+-    $parents = $form['#parents'];
+-
+-    $target_type = $this->fieldDefinition->getFieldStorageDefinition()->getSetting('target_type');
+-
+-    /** @var \Drupal\og\MembershipManagerInterface $membership_manager */
+-    $membership_manager = \Drupal::service('og.membership_manager');
+-    $user_groups = $membership_manager->getUserGroups(User::load(\Drupal::currentUser()->id()));
+-    $user_groups_target_type = isset($user_groups[$target_type]) ? $user_groups[$target_type] : [];
+-    $user_group_ids = array_map(function ($group) {
+-      return $group->id();
+-    }, $user_groups_target_type);
+-
+-    // Determine the number of widgets to display.
+-    switch ($cardinality) {
+-      case FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED:
+-        $field_state = static::getWidgetState($parents, $field_name, $form_state);
+-        $max = $field_state['items_count'];
+-        $is_multiple = TRUE;
+-        break;
+-
+-      default:
+-        $max = $cardinality - 1;
+-        $is_multiple = ($cardinality > 1);
+-        break;
+-    }
+-
+-    $title = $this->fieldDefinition->getLabel();
+-    $description = FieldFilteredMarkup::create(\Drupal::token()->replace($this->fieldDefinition->getDescription()));
+-
+-    $elements = [];
+-
+-    for ($delta = 0; $delta <= $max; $delta++) {
+-      // Add a new empty item if it doesn't exist yet at this delta.
+-      if (!isset($items[$delta])) {
+-        $items->appendItem();
+-      }
+-      elseif (!in_array($items[$delta]->get('target_id')->getValue(), $user_group_ids)) {
+-        continue;
+-      }
+-
+-      // For multiple fields, title and description are handled by the wrapping
+-      // table.
+-      if ($is_multiple) {
+-        $element = [
+-          '#title' => $this->t('@title (value @number)', ['@title' => $title, '@number' => $delta + 1]),
+-          '#title_display' => 'invisible',
+-          '#description' => '',
+-        ];
+-      }
+-      else {
+-        $element = [
+-          '#title' => $title,
+-          '#title_display' => 'before',
+-          '#description' => $description,
+-        ];
+-      }
+-
+-      $element = $this->formSingleElement($items, $delta, $element, $form, $form_state);
+-
+-      if ($element) {
+-        // Input field for the delta (drag-n-drop reordering).
+-        if ($is_multiple) {
+-          // We name the element '_weight' to avoid clashing with elements
+-          // defined by widget.
+-          $element['_weight'] = [
+-            '#type' => 'weight',
+-            '#title' => $this->t('Weight for row @number', ['@number' => $delta + 1]),
+-            '#title_display' => 'invisible',
+-            // Note: this 'delta' is the FAPI #type 'weight' element's property.
+-            '#delta' => $max,
+-            '#default_value' => $items[$delta]->_weight ?: $delta,
+-            '#weight' => 100,
+-          ];
+-        }
+-
+-        $elements[$delta] = $element;
+-      }
+-    }
+-
+-    if ($elements) {
+-      $elements += [
+-        '#theme' => 'field_multiple_value_form',
+-        '#field_name' => $field_name,
+-        '#cardinality' => $cardinality,
+-        '#cardinality_multiple' => $this->fieldDefinition->getFieldStorageDefinition()->isMultiple(),
+-        '#required' => $this->fieldDefinition->isRequired(),
+-        '#title' => $title,
+-        '#description' => $description,
+-        '#max_delta' => $max,
+-      ];
+-
+-      // Add 'add more' button, if not working with a programmed form.
+-      if ($cardinality == FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED && !$form_state->isProgrammed()) {
+-        $id_prefix = implode('-', array_merge($parents, [$field_name]));
+-        $wrapper_id = Html::getUniqueId($id_prefix . '-add-more-wrapper');
+-        $elements['#prefix'] = '<div id="' . $wrapper_id . '">';
+-        $elements['#suffix'] = '</div>';
+-
+-        $elements['add_more'] = [
+-          '#type' => 'submit',
+-          '#name' => strtr($id_prefix, '-', '_') . '_add_more',
+-          '#value' => t('Add another item'),
+-          '#attributes' => ['class' => ['field-add-more-submit']],
+-          '#limit_validation_errors' => [array_merge($parents, [$field_name])],
+-          '#submit' => [[get_class($this), 'addMoreSubmit']],
+-          '#ajax' => [
+-            'callback' => [get_class($this), 'addMoreAjax'],
+-            'wrapper' => $wrapper_id,
+-            'effect' => 'fade',
+-          ],
+-        ];
+-      }
+-    }
+-
+-    return $elements;
+-  }
+-
+-  /**
+-   * Adding the other groups widget to the form.
+-   *
+-   * @param \Drupal\Core\Field\FieldItemListInterface $items
+-   *   The existing items to add to the form.
+-   * @param \Drupal\Core\Form\FormStateInterface $form_state
+-   *   The form state.
+-   *
+-   * @return array
+-   *   A renderable element with the "other groups".
+-   */
+-  protected function otherGroupsWidget(FieldItemListInterface $items, FormStateInterface $form_state) {
+-    if ($this->fieldDefinition->getTargetEntityTypeId() == 'user') {
+-      $description = $this->t('As groups administrator, associate this user with groups you do <em>not</em> belong to.');
+-    }
+-    else {
+-      $description = $this->t('As groups administrator, associate this content with groups you do <em>not</em> belong to.');
+-    }
+-
+-    $field_wrapper = Html::getClass($this->fieldDefinition->getName()) . '-add-another-group';
+-
+-    $elements = [
+-      '#type' => 'container',
+-      '#tree' => TRUE,
+-      '#title' => $this->t('Other groups'),
+-      '#description' => $description,
+-      '#prefix' => '<div id="' . $field_wrapper . '">',
+-      '#suffix' => '</div>',
+-      '#cardinality' => FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED,
+-      '#cardinality_multiple' => TRUE,
+-      '#theme' => 'field_multiple_value_form',
+-      '#field_name' => $this->fieldDefinition->getName(),
+-      '#max_delta' => 1,
+-    ];
+-
+-    $elements['add_more'] = [
+-      '#type' => 'button',
+-      '#value' => $this->t('Add another item'),
+-      '#name' => 'add_another_group',
+-      '#ajax' => [
+-        'callback' => [$this, 'addMoreAjax'],
+-        'wrapper' => $field_wrapper,
+-        'effect' => 'fade',
+-      ],
+-    ];
+-
+-    $delta = 0;
+-
+-    $target_type = $this->fieldDefinition->getFieldStorageDefinition()->getSetting('target_type');
+-
+-    /** @var \Drupal\og\MembershipManagerInterface $membership_manager */
+-    $membership_manager = \Drupal::service('og.membership_manager');
+-    $user_groups = $membership_manager->getUserGroups(User::load(\Drupal::currentUser()->id()));
+-    $user_groups_target_type = isset($user_groups[$target_type]) ? $user_groups[$target_type] : [];
+-    $user_group_ids = array_map(function ($group) {
+-      return $group->id();
+-    }, $user_groups_target_type);
+-
+-    $other_groups_weight_delta = round(count($user_groups) / 2);
+-
+-    foreach ($items->referencedEntities() as $group) {
+-      if (in_array($group->id(), $user_group_ids)) {
+-        continue;
+-      }
+-
+-      $elements[$delta] = $this->otherGroupsSingle($delta, $group, $other_groups_weight_delta);
+-      $delta++;
+-    }
+-
+-    if (!$form_state->get('other_group_delta')) {
+-      $form_state->set('other_group_delta', $delta);
+-    }
+-
+-    // Get the trigger element and check if this the add another item button.
+-    $trigger_element = $form_state->getTriggeringElement();
+-
+-    if ($trigger_element['#name'] == 'add_another_group') {
+-      // Increase the number of other groups.
+-      $delta = $form_state->get('other_group_delta') + 1;
+-      $form_state->set('other_group_delta', $delta);
+-    }
+-
+-    // Add another auto complete field.
+-    for ($i = $delta; $i <= $form_state->get('other_group_delta'); $i++) {
+-      // Also add one to the weight delta, just to make sure.
+-      $elements[$i] = $this->otherGroupsSingle($i, NULL, $other_groups_weight_delta + 1);
+-    }
+-
+-    return $elements;
+-  }
+-
+-  /**
+-   * Generating other groups auto complete element.
+-   *
+-   * @param int $delta
+-   *   The delta of the new element. Need to be the last delta in order to be
+-   *   added in the end of the list.
+-   * @param \Drupal\Core\Entity\EntityInterface|null $entity
+-   *   The entity object.
+-   * @param int $weight_delta
+-   *   The delta of the item.
+-   *
+-   * @return array
+-   *   A single entity reference input.
+-   */
+-  public function otherGroupsSingle($delta, EntityInterface $entity = NULL, $weight_delta = 10) {
+-    return [
+-      'target_id' => [
+-        // @todo Allow this to be configurable with a widget setting.
+-        '#type' => 'entity_autocomplete',
+-        '#target_type' => $this->fieldDefinition->getFieldStorageDefinition()->getSetting('target_type'),
+-        '#selection_handler' => 'og:default',
+-        '#selection_settings' => [
+-          'other_groups' => TRUE,
+-          'field_mode' => 'admin',
+-        ],
+-        '#default_value' => $entity,
+-      ],
+-      '_weight' => [
+-        '#type' => 'weight',
+-        '#title_display' => 'invisible',
+-        '#delta' => $weight_delta,
+-        '#default_value' => $delta,
+-      ],
+-    ];
+-  }
+-
+-  /**
+-   * {@inheritdoc}
+-   */
+-  public function massageFormValues(array $values, array $form, FormStateInterface $form_state) {
+-    // Remove empty values. The form fields may be empty.
+-    $values = array_filter($values, function ($item) {
+-      return !empty($item['target_id']);
+-    });
+-
+-    // Get the groups from the other groups widget.
+-    foreach ($form[$this->fieldDefinition->getName()]['other_groups'] as $key => $value) {
+-      if (!is_int($key)) {
+-        continue;
+-      }
+-
+-      // Matches the entity label and ID. E.g. 'Label (123)'. The entity ID will
+-      // be captured in it's own group, with the key 'id'.
+-      preg_match("|.+\((?<id>[\w.]+)\)|", $value['target_id']['#value'], $matches);
+-
+-      if (!empty($matches['id'])) {
+-        $values[] = [
+-          'target_id' => $matches['id'],
+-          '_weight' => $value['_weight']['#value'],
+-          '_original_delta' => $value['_weight']['#delta'],
+-        ];
+-      }
+-    }
+-
+-    return $values;
+-  }
+-
+-  /**
+-   * Determines if the current user has group admin permission.
+-   *
+-   * @return bool
+-   *   TRUE if the user is a group admin.
+-   */
+-  protected function isGroupAdmin() {
+-    // @todo Inject current user service as a dependency.
+-    return \Drupal::currentUser()->hasPermission(OgAccess::ADMINISTER_GROUP_PERMISSION);
+-  }
+-
+-}
+diff --git a/src/Plugin/OgFields/AudienceField.php b/src/Plugin/OgFields/AudienceField.php
+index 90af8847..d35a0baf 100644
+--- a/src/Plugin/OgFields/AudienceField.php
++++ b/src/Plugin/OgFields/AudienceField.php
+@@ -58,13 +58,9 @@ public function getFieldBaseDefinition(array $values = []) {
+    * {@inheritdoc}
+    */
+   public function getFormDisplayDefinition(array $values = []) {
++    // @todo: isn't it taken from the definition in OgStandardReferenceItem?
+     $values += [
+-      'type' => 'og_complex',
+-      'settings' => [
+-        'match_operator' => 'CONTAINS',
+-        'size' => 60,
+-        'placeholder' => '',
+-      ],
++      'type' => 'options_select',
+     ];
+ 
+     return $values;
+diff --git a/src/Plugin/Validation/Constraint/ValidOgMembershipMultipleReferenceConstraint.php b/src/Plugin/Validation/Constraint/ValidOgMembershipMultipleReferenceConstraint.php
+new file mode 100644
+index 00000000..73cabb7d
+--- /dev/null
++++ b/src/Plugin/Validation/Constraint/ValidOgMembershipMultipleReferenceConstraint.php
+@@ -0,0 +1,28 @@
++<?php
++
++namespace Drupal\og\Plugin\Validation\Constraint;
++
++use Symfony\Component\Validator\Constraint;
++
++/**
++ * Entity Reference valid references constraint.
++ *
++ * Make sure that when a user that can only post content inside a group
++ * populated one of the audience fields. After the fields are populated the
++ * constraint for checking valid references will make sure the values are OK.
++ *
++ * @Constraint(
++ *   id = "ValidOgMembershipMultipleReference",
++ *   label = @Translation("Organic Groups valid references", context = "Validation")
++ * )
++ */
++class ValidOgMembershipMultipleReferenceConstraint extends Constraint {
++
++  /**
++   * Fields are not populated.
++   *
++   * @var string
++   */
++  public $AudienceFieldsAreNotPopulated = 'One of the fields @fields is required.';
++
++}
+diff --git a/src/Plugin/Validation/Constraint/ValidOgMembershipMultipleReferenceConstraintValidator.php b/src/Plugin/Validation/Constraint/ValidOgMembershipMultipleReferenceConstraintValidator.php
+new file mode 100644
+index 00000000..4673ee7d
+--- /dev/null
++++ b/src/Plugin/Validation/Constraint/ValidOgMembershipMultipleReferenceConstraintValidator.php
+@@ -0,0 +1,71 @@
++<?php
++
++namespace Drupal\og\Plugin\Validation\Constraint;
++
++use Drupal\og\Og;
++use Symfony\Component\Validator\Constraint;
++use Symfony\Component\Validator\ConstraintValidator;
++
++/**
++ * Make sure that at least one audience field is populated.
++ */
++class ValidOgMembershipMultipleReferenceConstraintValidator extends ConstraintValidator {
++
++  /**
++   * {@inheritdoc}
++   */
++  public function validate($entity, Constraint $constraint) {
++    /* @var \Drupal\Core\Entity\ContentEntityBase $entity */
++    if (!Og::isGroupContent($entity->getEntityTypeId(), $entity->bundle())) {
++      return;
++    }
++
++    /** @var \Drupal\Core\Session\AccountProxy $current_user */
++    $current_user = \Drupal::service('current_user');
++    $account = $current_user->getAccount();
++    $bundle = $entity->bundle();
++
++    // Check if the user has site wide permission. If the the user has a site
++    // wide permission we don't need to enforce the assign the content to a
++    // group.
++    if ($entity->isNew()) {
++      $access = $account->hasPermission("create $bundle content");
++    }
++    else {
++      $access = $account->hasPermission("edit own $bundle content") || $account->hasPermission("edit any $bundle content");
++    }
++
++    if ($access) {
++      return;
++    }
++
++    $audience_fields = \Drupal::service('og.group_audience_helper')->getAllGroupAudienceFields($entity->getEntityTypeId(), $entity->bundle());
++
++    if (count($audience_fields) === 1) {
++      // There is only one group audience field. Setting the field as required
++      // is done in another place.
++      return;
++    }
++
++    $fields_are_empty = TRUE;
++    $fields = [];
++
++    foreach ($audience_fields as $audience_field => $info) {
++      $fields[] = $info->getLabel();
++
++      // Check that the fields are not empty.
++      foreach ($entity->get($audience_field)->getValue() as $value) {
++        if (!empty($value)) {
++          $fields_are_empty = FALSE;
++        }
++      }
++    }
++
++    if ($fields_are_empty) {
++      $this->context->addViolation('One of the fields @fields is required.', [
++        '@fields' => implode(', ', $fields),
++      ]);
++    }
++  }
++
++}
+diff --git a/src/Plugin/Validation/Constraint/ValidOgMembershipReferenceConstraint.php b/src/Plugin/Validation/Constraint/ValidOgMembershipReferenceConstraint.php
+index d6f9adf8..3a7aef80 100644
+--- a/src/Plugin/Validation/Constraint/ValidOgMembershipReferenceConstraint.php
++++ b/src/Plugin/Validation/Constraint/ValidOgMembershipReferenceConstraint.php
+@@ -23,4 +23,11 @@ class ValidOgMembershipReferenceConstraint extends Constraint {
+    */
+   public $NotValidGroup = 'The entity %label is not defined as a group.';
+ 
++  /**
++   * Not a valid group message.
++   *
++   * @var string
++   */
++  public $NotAllowedToPostInGroup = 'You are not allowed to post content in the group %label';
++
+ }
+diff --git a/src/Plugin/Validation/Constraint/ValidOgMembershipReferenceConstraintValidator.php b/src/Plugin/Validation/Constraint/ValidOgMembershipReferenceConstraintValidator.php
+index 1bd9b7ee..7fff5de1 100644
+--- a/src/Plugin/Validation/Constraint/ValidOgMembershipReferenceConstraintValidator.php
++++ b/src/Plugin/Validation/Constraint/ValidOgMembershipReferenceConstraintValidator.php
+@@ -20,21 +20,31 @@ public function validate($value, Constraint $constraint) {
+       return;
+     }
+ 
+-    $entity = \Drupal::entityTypeManager()
++    $group = \Drupal::entityTypeManager()
+       ->getStorage($value->getFieldDefinition()->getFieldStorageDefinition()->getSetting('target_type'))
+       ->load($value->get('target_id')->getValue());
+ 
+-    if (!$entity) {
+-      // Entity with that entity ID does not exists. This could happen if a
+-      // stale entity is passed for validation.
++    if (!$group) {
++      // Entity with that group ID does not exists. This could happen if a
++      // stale group is passed for validation.
+       return;
+     }
+ 
+-    $params['%label'] = $entity->label();
++    $params['%label'] = $group->label();
+ 
+-    if (!Og::isGroup($entity->getEntityTypeId(), $entity->bundle())) {
++    if (!Og::isGroup($group->getEntityTypeId(), $group->bundle())) {
+       $this->context->addViolation($constraint->NotValidGroup, $params);
+     }
++
++    /** @var \Drupal\Core\Entity\ContentEntityInterface $entity */
++    $entity = $this->context->getRoot()->getValue();
++
++    /** @var \Drupal\Core\Access\AccessResult $access */
++    $access = \Drupal::service('og.access')->userAccessEntity('create ' . $entity->getEntityTypeId() . ' ' . $entity->bundle(), $group, \Drupal::currentUser()->getAccount());
++
++    if ($access->isForbidden()) {
++      $this->context->addViolation($constraint->NotAllowedToPostInGroup, $params);
++    }
+   }
+ 
+ }
+diff --git a/tests/src/Functional/OgComplexWidgetTest.php b/tests/src/Functional/OgComplexWidgetTest.php
+deleted file mode 100644
+index 567d77a3..00000000
+--- a/tests/src/Functional/OgComplexWidgetTest.php
++++ /dev/null
+@@ -1,123 +0,0 @@
+-<?php
+-
+-namespace Drupal\Tests\og\Functional;
+-
+-use Drupal\block_content\Entity\BlockContent;
+-use Drupal\block_content\Entity\BlockContentType;
+-use Drupal\node\Entity\Node;
+-use Drupal\og\Og;
+-use Drupal\og\OgGroupAudienceHelperInterface;
+-use Drupal\simpletest\BrowserTestBase;
+-use Drupal\simpletest\ContentTypeCreationTrait;
+-use Drupal\simpletest\NodeCreationTrait;
+-
+-/**
+- * Tests the complex widget.
+- *
+- * @group og
+- */
+-class OgComplexWidgetTest extends BrowserTestBase {
+-
+-  use ContentTypeCreationTrait;
+-  use NodeCreationTrait;
+-
+-  /**
+-   * {@inheritdoc}
+-   */
+-  public static $modules = ['block_content', 'node', 'og'];
+-
+-  /**
+-   * {@inheritdoc}
+-   */
+-  public function setUp() {
+-    parent::setUp();
+-
+-    // Create a "group" bundle on the Custom Block entity type and turn it into
+-    // a group. Note we're not using the Entity Test entity for this since it
+-    // does not have real support for multiple bundles.
+-    BlockContentType::create(['id' => 'group'])->save();
+-    Og::groupTypeManager()->addGroup('block_content', 'group');
+-
+-    // Add a group audience field to the "post" node type, turning it into a
+-    // group content type.
+-    $this->createContentType(['type' => 'post']);
+-    $settings = [
+-      'field_storage_config' => [
+-        'settings' => [
+-          'target_type' => 'block_content',
+-        ],
+-      ],
+-    ];
+-    Og::createField(OgGroupAudienceHelperInterface::DEFAULT_FIELD, 'node', 'post', $settings);
+-  }
+-
+-  /**
+-   * Tests adding groups with the "Groups audience" and "Other Groups" fields.
+-   *
+-   * @dataProvider ogComplexFieldsProvider
+-   */
+-  public function testFields($field, $field_name) {
+-    $admin_user = $this->drupalCreateUser([
+-      'administer group',
+-      'access content',
+-      'create post content',
+-    ]);
+-    $group_owner = $this->drupalCreateUser([
+-      'access content',
+-      'create post content',
+-    ]);
+-
+-    // Create a group content type owned by the group owner.
+-    $values = [
+-      'type' => 'group',
+-      'uid' => $group_owner->id(),
+-    ];
+-    $group = BlockContent::create($values);
+-    $group->save();
+-
+-    // Log in as administrator.
+-    $this->drupalLogin($admin_user);
+-
+-    // Create a new post in the group by using the given field in the UI.
+-    $edit = [
+-      'title[0][value]' => "Group owner's post.",
+-      $field_name => "group ({$group->id()})",
+-    ];
+-    $this->drupalGet('node/add/post');
+-    $this->submitForm($edit, 'Save');
+-    $this->assertSession()->statusCodeEquals(200);
+-
+-    // Retrieve the post that was created from the database.
+-    /** @var QueryInterface $query */
+-    $query = $this->container->get('entity.query')->get('node');
+-    $result = $query
+-      ->condition('type', 'post')
+-      ->range(0, 1)
+-      ->sort('nid', 'DESC')
+-      ->execute();
+-    $post_nid = reset($result);
+-
+-    /** @var \Drupal\node\Entity\NodeInterface $post */
+-    $post = Node::load($post_nid);
+-
+-    // Check that the post references the group correctly.
+-    /** @var \Drupal\og\OgMembershipReferenceItemList $reference_list */
+-    $reference_list = $post->get(OgGroupAudienceHelperInterface::DEFAULT_FIELD);
+-    $this->assertEquals(1, $reference_list->count(), "There is 1 reference after adding a group to the '$field' field.");
+-    $this->assertEquals($group->id(), $reference_list->first()->getValue()['target_id'], "The '$field' field references the correct group.");
+-  }
+-
+-  /**
+-   * Data provider for ::testFields()
+-   *
+-   * @return array
+-   *   Array with the field human readable name, and the field's HTML name.
+-   */
+-  public function ogComplexFieldsProvider() {
+-    return [
+-      ['Groups audience', 'og_audience[0][target_id]'],
+-      ['Other groups', 'other_groups[0][target_id]'],
+-    ];
+-  }
+-
+-}
+diff --git a/tests/src/Functional/OgMultipleSelectionWidgetAutoCompleteTest.php b/tests/src/Functional/OgMultipleSelectionWidgetAutoCompleteTest.php
+new file mode 100644
+index 00000000..792e7dc8
+--- /dev/null
++++ b/tests/src/Functional/OgMultipleSelectionWidgetAutoCompleteTest.php
+@@ -0,0 +1,192 @@
++<?php
++
++namespace Drupal\Tests\og\Functional;
++
++use Drupal\node\Entity\Node;
++use Drupal\node\Entity\NodeType;
++use Drupal\og\Entity\OgRole;
++use Drupal\og\Og;
++use Drupal\og\OgGroupAudienceHelper;
++use Drupal\simpletest\ContentTypeCreationTrait;
++use Drupal\Tests\BrowserTestBase;
++
++/**
++ * Testing the audience field with multiple auto select widgets.
++ *
++ * @group og
++ */
++class OgMultipleSelectionWidgetAutoCompleteTest extends BrowserTestBase {
++
++  use ContentTypeCreationTrait;
++
++  /**
++   * {@inheritdoc}
++   */
++  public static $modules = ['node', 'og'];
++
++  /**
++   * A group node for user 1.
++   *
++   * @var \Drupal\node\Entity\Node
++   */
++  protected $group;
++
++  /**
++   * Group owner.
++   *
++   * @var \Drupal\user\Entity\User
++   */
++  protected $user;
++
++  /**
++   * OG role manager service.
++   *
++   * @var \Drupal\og\OgRoleManagerInterface
++   */
++  protected $roleManager;
++
++  /**
++   * The role of the user.
++   *
++   * @var \Drupal\og\OgRoleInterface
++   */
++  protected $role;
++
++  /**
++   * {@inheritdoc}
++   */
++  public function setUp() {
++    parent::setUp();
++
++    // Create group node types.
++    $this->createContentType(['type' => 'group_type']);
++    Og::addGroup('node', 'group_type');
++
++    NodeType::create(['type' => 'group_content'])->save();
++
++    // Set the field widget as autocomplete..
++    $settings = [
++      'form_display' => [
++        'type' => 'entity_reference_autocomplete',
++      ],
++    ];
++    Og::createField(OgGroupAudienceHelper::DEFAULT_FIELD, 'node', 'group_content', $settings);
++
++    // Add another field.
++    $settings += [
++      'field_name' => 'override_name',
++      'field_config' => ['label' => 'Second group reference'],
++    ];
++    Og::createField(OgGroupAudienceHelper::DEFAULT_FIELD, 'node', 'group_content', $settings);
++
++    // Create users.
++    $this->user = $this->drupalCreateUser();
++
++    // Create groups.
++    $this->group = Node::create([
++      'type' => 'group_type',
++      'title' => 'group1',
++      'uid' => $this->user->id(),
++    ]);
++    $this->group->save();
++
++    // Adding to the member role the appropriate permission.
++    $this->role = OgRole::create();
++    $this->role
++      ->setName('content_editor')
++      ->setLabel('Content group editor')
++      ->setGroupType('node')
++      ->setGroupBundle('group_type')
++      ->grantPermission('create node group_content')
++      ->save();
++
++    // Create a role.
++    $role_storage = $this->container->get('entity.manager')->getStorage('user_role');
++    $role_storage->create([
++      'id' => 'dummy_role',
++      'permissions' => [
++        'create group_content content',
++        'edit own group_content content',
++        'edit any group_content content',
++      ],
++    ])->save();
++  }
++
++  /**
++   * Test the auto complete widget for non group member.
++   */
++  public function testAutoCompleteForNonGroupMember() {
++    $this->drupalLogin($this->user);
++
++    // Submit a form without any group.
++    $edit = [
++      'title[0][value]' => 'First group name',
++    ];
++
++    $this->drupalGet('node/add/group_content');
++    $this->submitForm($edit, 'Save');
++
++    // Verify the error appeared.
++    $this->assertSession()->pageTextContains('One of the fields Groups audience, Second group reference is required.');
++
++    // Submit the form when the first field is populated.
++    $edit = [
++      'title[0][value]' => 'First group name',
++      'og_audience[0][target_id]' => $this->group->label() . ' (' . $this->group->id() . ')',
++    ];
++
++    $this->drupalGet('node/add/group_content');
++    $this->submitForm($edit, 'Save');
++
++    // Make sure the node has created.
++    $this->assertSession()->pageTextContains('First group name has been created.');
++
++    $query = $this->container->get('entity.query')->get('node');
++    $result = $query
++      ->condition('type', 'group_content')
++      ->range(0, 1)
++      ->sort('nid', 'DESC')
++      ->execute();
++    $gcid = reset($result);
++
++    // Edit the node and remove the reference.
++    $edit = [
++      'title[0][value]' => 'Second group name',
++      'og_audience[0][target_id]' => '',
++    ];
++
++    $this->drupalGet('node/' . $gcid . '/edit');
++    $this->submitForm($edit, 'Save');
++
++    // Make sure the error appeared.
++    $this->assertSession()->pageTextContains('One of the fields Groups audience, Second group reference is required.');
++
++    // Grant to the user site wide permission.
++    $this->user->addRole('dummy_role');
++    $this->user->save();
++
++    // Remove the reference.
++    $edit = [
++      'title[0][value]' => 'Second group name',
++      'og_audience[0][target_id]' => '',
++    ];
++
++    $this->drupalGet('node/' . $gcid . '/edit');
++    $this->submitForm($edit, 'Save');
++
++    // Make sure the node was updated.
++    $this->assertSession()->pageTextContains('Second group name has been updated.');
++
++    // Create a new group content without any group.
++    $edit = [
++      'title[0][value]' => 'Third group name',
++    ];
++
++    $this->drupalGet('node/add/group_content');
++    $this->submitForm($edit, 'Save');
++
++    // Make sure the node was created.
++    $this->assertSession()->pageTextContains('Third group name has been created.');
++  }
++
++}
+diff --git a/tests/src/Functional/OgSelectionWidgetAutoCompleteTest.php b/tests/src/Functional/OgSelectionWidgetAutoCompleteTest.php
+new file mode 100644
+index 00000000..8b5737dd
+--- /dev/null
++++ b/tests/src/Functional/OgSelectionWidgetAutoCompleteTest.php
+@@ -0,0 +1,165 @@
++<?php
++
++namespace Drupal\Tests\og\Functional;
++
++use Behat\Mink\Exception\ResponseTextException;
++use Drupal\node\Entity\Node;
++use Drupal\node\Entity\NodeType;
++use Drupal\og\Entity\OgRole;
++use Drupal\og\Og;
++use Drupal\og\OgGroupAudienceHelper;
++use Drupal\simpletest\ContentTypeCreationTrait;
++use Drupal\Tests\BrowserTestBase;
++
++/**
++ * Tests Og auto complete widget.
++ *
++ * @group og
++ */
++class OgSelectionWidgetAutoCompleteTest extends BrowserTestBase {
++
++  use ContentTypeCreationTrait;
++
++  /**
++   * {@inheritdoc}
++   */
++  public static $modules = ['node', 'og'];
++
++  /**
++   * A group node for user 1.
++   *
++   * @var \Drupal\node\Entity\Node
++   */
++  protected $group1;
++
++  /**
++   * A group node for user 2.
++   *
++   * @var \Drupal\node\Entity\Node
++   */
++  protected $group2;
++
++  /**
++   * Group owner.
++   *
++   * @var \Drupal\user\Entity\User
++   */
++  protected $user1;
++
++  /**
++   * Group owner.
++   *
++   * @var \Drupal\user\Entity\User
++   */
++  protected $user2;
++
++  /**
++   * OG role manager service.
++   *
++   * @var \Drupal\og\OgRoleManagerInterface
++   */
++  protected $roleManager;
++
++  /**
++   * The role of the user.
++   *
++   * @var \Drupal\og\OgRoleInterface
++   */
++  protected $role;
++
++  /**
++   * {@inheritdoc}
++   */
++  public function setUp() {
++    parent::setUp();
++
++    // Create group node types.
++    $this->createContentType(['type' => 'group_type']);
++    Og::addGroup('node', 'group_type');
++
++    NodeType::create(['type' => 'group_content'])->save();
++
++    // Use a select list widget for the audience field, so it's easier to get
++    // all the values.
++    $settings = [
++      'form_display' => [
++        'type' => 'entity_reference_autocomplete',
++      ],
++    ];
++    Og::createField(OgGroupAudienceHelper::DEFAULT_FIELD, 'node', 'group_content', $settings);
++
++    // Create users.
++    $this->user1 = $this->drupalCreateUser();
++    $this->user2 = $this->drupalCreateUser();
++
++    // Create groups.
++    $this->group1 = Node::create([
++      'type' => 'group_type',
++      'title' => 'group1',
++      'uid' => $this->user1->id(),
++    ]);
++    $this->group1->save();
++
++    $this->group2 = Node::create([
++      'type' => 'group_type',
++      'title' => 'group2',
++      'uid' => $this->user2->id(),
++    ]);
++    $this->group2->save();
++
++    // Adding to the member role the appropriate permission.
++    $this->role = OgRole::create();
++    $this->role
++      ->setName('content_editor')
++      ->setLabel('Content group editor')
++      ->setGroupType('node')
++      ->setGroupBundle('group_type')
++      ->grantPermission('create node group_content')
++      ->save();
++  }
++
++  /**
++   * Test the auto complete widget for non group member.
++   */
++  public function testAutoCompleteForNonGroupMember() {
++    $this->drupalLogin($this->user1);
++
++    // Verify the user can reference group content to a groups which he owns.
++    $edit = [
++      'title[0][value]' => $this->randomMachineName(),
++      'og_audience[0][target_id]' => $this->group1->label() . ' (' . $this->group2->id() . ')',
++    ];
++
++    $this->drupalGet('node/add/group_content');
++    $this->submitForm($edit, 'Save');
++
++    // When using 8.4, ValidReferenceConstraintValidator is prevent from
++    // ValidOgMembershipReferenceConstraintValidator message to appear. We need
++    // to see how we can override that so the user would have a better
++    // understanding why the reference is invalid.
++    try {
++      $this->assertSession()->pageTextContains('You are not allowed to post content in the group ' . $this->group2->label());
++    }
++    catch (ResponseTextException $e) {
++      $this->assertSession()->pageTextContains('This entity (node: ' . $this->group2->id() . ') cannot be referenced.');
++    }
++    catch (\Exception $e) {
++      throw new \Exception('Both of the errors for the invalid group reference did not appear on the screen.');
++    }
++
++    // Add the member to the group.
++    Og::createMembership($this->group2, $this->user1)->addRole($this->role)->save();
++
++    $this->drupalLogin($this->user1);
++    // Testing the user can add group content after being a member of the group.
++    $edit = [
++      'title[0][value]' => $this->randomMachineName(),
++      'og_audience[0][target_id]' => $this->group1->label() . ' (' . $this->group2->id() . ')',
++    ];
++
++    $this->drupalGet('node/add/group_content');
++    $this->submitForm($edit, 'Save');
++    $this->assertSession()->pageTextContains($edit['title[0][value]'] . ' has been created.');
++  }
++
++}
+diff --git a/tests/src/Functional/OgSelectionWidgetOptionsTest.php b/tests/src/Functional/OgSelectionWidgetOptionsTest.php
+new file mode 100644
+index 00000000..c6b1391c
+--- /dev/null
++++ b/tests/src/Functional/OgSelectionWidgetOptionsTest.php
+@@ -0,0 +1,181 @@
++<?php
++
++namespace Drupal\Tests\og\Functional;
++
++use Drupal\node\Entity\Node;
++use Drupal\node\Entity\NodeType;
++use Drupal\node\NodeInterface;
++use Drupal\og\Entity\OgRole;
++use Drupal\og\Og;
++use Drupal\og\OgGroupAudienceHelper;
++use Drupal\og\OgRoleInterface;
++use Drupal\simpletest\ContentTypeCreationTrait;
++use Drupal\Tests\BrowserTestBase;
++
++/**
++ * Tests the various OG handler options.
++ *
++ * @group og
++ */
++class OgSelectionWidgetOptionsTest extends BrowserTestBase {
++
++  use ContentTypeCreationTrait;
++
++  /**
++   * {@inheritdoc}
++   */
++  public static $modules = ['node', 'og'];
++
++  /**
++   * A group node.
++   *
++   * @var \Drupal\node\Entity\Node
++   */
++  protected $group1;
++
++  /**
++   * A group node.
++   *
++   * @var \Drupal\node\Entity\Node
++   */
++  protected $group2;
++
++
++  /**
++   * An unpublished group node.
++   *
++   * @var \Drupal\node\Entity\Node
++   */
++  protected $unpublishedGroup;
++
++  /**
++   * Demo user.
++   *
++   * @var \Drupal\user\Entity\User
++   */
++  protected $groupMemberUser;
++
++  /**
++   * Group owner.
++   *
++   * @var \Drupal\user\Entity\User
++   */
++  protected $groupOwnerUser;
++
++  /**
++   * Administrator groups user.
++   *
++   * @var \Drupal\user\Entity\User
++   */
++  protected $groupAdministratorUser;
++
++  /**
++   * A non-member user.
++   *
++   * @var \Drupal\user\Entity\User
++   */
++  protected $nonMemberUser;
++
++  /**
++   * {@inheritdoc}
++   */
++  public function setUp() {
++    parent::setUp();
++
++    // Create group node types.
++    $this->createContentType(['type' => 'group_type1']);
++    $this->createContentType(['type' => 'group_type2']);
++
++    Og::addGroup('node', 'group_type1');
++    Og::addGroup('node', 'group_type2');
++
++    NodeType::create(['type' => 'group_content'])->save();
++
++    // Use a select list widget for the audience field, so it's easier to get
++    // all the values.
++    $settings = [
++      'form_display' => [
++        'type' => 'options_select',
++      ],
++    ];
++    Og::createField(OgGroupAudienceHelper::DEFAULT_FIELD, 'node', 'group_content', $settings);
++
++    // Create users.
++    $this->groupMemberUser = $this->drupalCreateUser();
++    $this->groupOwnerUser = $this->drupalCreateUser();
++    $this->groupAdministratorUser = $this->drupalCreateUser(['administer group']);
++    $this->nonMemberUser = $this->drupalCreateUser();
++
++    // Create groups.
++    $this->group1 = Node::create([
++      'type' => 'group_type1',
++      'title' => 'group1',
++      'uid' => $this->groupOwnerUser->id(),
++    ]);
++    $this->group1->save();
++
++    $this->group2 = Node::create([
++      'type' => 'group_type2',
++      'title' => 'group2',
++      'uid' => $this->groupOwnerUser->id(),
++    ]);
++    $this->group2->save();
++
++    $this->unpublishedGroup = Node::create([
++      'type' => 'group_type2',
++      'title' => 'unpublished group',
++      'uid' => $this->groupOwnerUser->id(),
++      'status' => NodeInterface::NOT_PUBLISHED,
++    ]);
++    $this->unpublishedGroup->save();
++
++    // Add member to group.
++    Og::createMembership($this->group1, $this->groupMemberUser)->save();
++    Og::createMembership($this->group2, $this->groupMemberUser)->save();
++  }
++
++  /**
++   * Tests the group audience widgets shows correct values.
++   */
++  public function testNonRequiredAudienceField() {
++    // Non member user.
++    $this->drupalLogin($this->nonMemberUser);
++    $this->drupalGet('node/add/group_content');
++    $this->assertSession()->statusCodeEquals(403);
++
++    // Group member without create permissions.
++    $this->drupalLogin($this->groupMemberUser);
++    $this->drupalGet('node/add/group_content');
++    $this->assertSession()->statusCodeEquals(403);
++
++    // Grant create permission for the first group.
++    $role = OgRole::getRole($this->group1->getEntityTypeId(), $this->group1->bundle(), OgRoleInterface::AUTHENTICATED);
++    $role
++      ->grantPermission('create node group_content')
++      ->save();
++
++    $this->drupalGet('node/add/group_content');
++    // The user can't post group content site wide so the audience is required
++    // field.
++    // todo: is that correct?
++    // $this->assertSession()->optionExists('Groups audience', '_none');.
++    $this->assertSession()->optionExists('Groups audience', $this->group1->label());
++    $this->assertSession()->optionNotExists('Groups audience', $this->group2->label());
++
++    // Group owner.
++    $this->drupalLogin($this->groupOwnerUser);
++    $this->drupalGet('node/add/group_content');
++
++    $this->assertSession()->optionExists('Groups audience', $this->group1->label());
++    $this->assertSession()->optionExists('Groups audience', $this->group2->label());
++    $this->assertSession()->optionNotExists('Groups audience', $this->unpublishedGroup->label());
++
++    // Site-wide administrator.
++    $this->drupalLogin($this->groupAdministratorUser);
++    $this->drupalGet('node/add/group_content');
++    $this->assertSession()->optionExists('Groups audience', $this->group1->label());
++    $this->assertSession()->optionExists('Groups audience', $this->group2->label());
++    $this->assertSession()->optionNotExists('Groups audience', $this->unpublishedGroup->label());
++  }
++
++}
+diff --git a/tests/src/Functional/OgSelectionWidgetTest.php b/tests/src/Functional/OgSelectionWidgetTest.php
+new file mode 100644
+index 00000000..fb948f43
+--- /dev/null
++++ b/tests/src/Functional/OgSelectionWidgetTest.php
+@@ -0,0 +1,103 @@
++<?php
++
++namespace Drupal\Tests\og\Functional;
++
++use Drupal\entity_test\Entity\EntityTestBundle;
++use Drupal\entity_test\Entity\EntityTestWithBundle;
++use Drupal\node\Entity\Node;
++use Drupal\og\Og;
++use Drupal\og\OgGroupAudienceHelperInterface;
++use Drupal\Tests\BrowserTestBase;
++use Drupal\simpletest\ContentTypeCreationTrait;
++use Drupal\simpletest\NodeCreationTrait;
++
++/**
++ * Tests the widget for the OG selection handler.
++ *
++ * @group og
++ */
++class OgSelectionWidgetTest extends BrowserTestBase {
++
++  use ContentTypeCreationTrait;
++  use NodeCreationTrait;
++
++  /**
++   * {@inheritdoc}
++   */
++  public static $modules = ['block_content', 'node', 'og', 'entity_test'];
++
++  /**
++   * {@inheritdoc}
++   */
++  public function setUp() {
++    parent::setUp();
++
++    EntityTestBundle::create([
++      'id' => 'group_type',
++      'label' => 'group_type',
++    ])->save();
++
++    Og::groupTypeManager()->addGroup('entity_test_with_bundle', 'group_type');
++
++    // Add a group audience field to the "post" node type, turning it into a
++    // group content type.
++    $this->createContentType(['type' => 'post']);
++    $settings = [
++      'field_storage_config' => [
++        'settings' => [
++          'target_type' => 'entity_test_with_bundle',
++        ],
++      ],
++    ];
++    Og::createField(OgGroupAudienceHelperInterface::DEFAULT_FIELD, 'node', 'post', $settings);
++  }
++
++  /**
++   * Tests adding groups, and node access.
++   */
++  public function testFields() {
++    $user = $this->drupalCreateUser([
++      'administer group',
++      'access content',
++      'create post content',
++    ]);
++
++    $group = EntityTestWithBundle::create([
++      'type' => 'group_type',
++      'name' => $this->randomMachineName(),
++    ]);
++    $group->save();
++
++    // Log in as administrator.
++    $this->drupalLogin($user);
++
++    // Create a new post in the group by using the given field in the UI.
++    $edit = [
++      'title[0][value]' => $this->randomMachineName(),
++      'og_audience[]' => $group->id(),
++    ];
++
++    $this->drupalGet('node/add/post');
++    $this->submitForm($edit, 'Save');
++    $this->assertSession()->statusCodeEquals(200);
++
++    // Retrieve the post that was created from the database.
++    /** @var \Drupal\Core\Entity\Query\QueryInterface $query */
++    $query = $this->container->get('entity.query')->get('node');
++    $result = $query
++      ->condition('type', 'post')
++      ->range(0, 1)
++      ->sort('nid', 'DESC')
++      ->execute();
++    $post_nid = reset($result);
++
++    /** @var \Drupal\node\NodeInterface $post */
++    $post = Node::load($post_nid);
++
++    // Check that the post references the group correctly.
++    $reference_list = $post->get(OgGroupAudienceHelperInterface::DEFAULT_FIELD);
++    $this->assertEquals(1, $reference_list->count(), "There is 1 reference after adding a group to the audience field.");
++    $this->assertEquals($group->id(), $reference_list->first()->getValue()['target_id'], "The audience field references the correct group.");
++  }
++
++}
+diff --git a/tests/src/Kernel/Entity/SelectionHandlerTest.php b/tests/src/Kernel/Entity/OgSelectionTest.php
+similarity index 63%
+rename from tests/src/Kernel/Entity/SelectionHandlerTest.php
+rename to tests/src/Kernel/Entity/OgSelectionTest.php
+index 68bb2fdc..f152d15c 100644
+--- a/tests/src/Kernel/Entity/SelectionHandlerTest.php
++++ b/tests/src/Kernel/Entity/OgSelectionTest.php
+@@ -7,7 +7,10 @@
+ use Drupal\node\Entity\Node;
+ use Drupal\node\Entity\NodeType;
+ use Drupal\KernelTests\KernelTestBase;
++use Drupal\og\Entity\OgRole;
+ use Drupal\og\Og;
++use Drupal\og\OgRoleInterface;
++use Drupal\user\Entity\Role;
+ use Drupal\og\OgGroupAudienceHelperInterface;
+ use Drupal\user\Entity\User;
+ 
+@@ -16,7 +19,7 @@
+  *
+  * @group og
+  */
+-class SelectionHandlerTest extends KernelTestBase {
++class OgSelectionTest extends KernelTestBase {
+ 
+   /**
+    * The selection handler.
+@@ -38,18 +41,25 @@ class SelectionHandlerTest extends KernelTestBase {
+   ];
+ 
+   /**
+-   * A user object.
++   * A site-wide group administrator.
+    *
+    * @var \Drupal\user\Entity\User
+    */
+-  protected $user1;
++  protected $groupAdmin;
+ 
+   /**
+-   * A user object.
++   * A group manager.
+    *
+    * @var \Drupal\user\Entity\User
+    */
+-  protected $user2;
++  protected $groupManager;
++
++  /**
++   * A regular group member.
++   *
++   * @var \Drupal\user\Entity\User
++   */
++  protected $groupMember;
+ 
+   /**
+    * The machine name of the group node type.
+@@ -101,21 +111,38 @@ protected function setUp() {
+       'name' => $this->randomString(),
+     ])->save();
+ 
+-    // Define the group content as group.
++    // Define bundle as group.
+     Og::groupTypeManager()->addGroup('node', $this->groupBundle);
+ 
+     // Add og audience field to group content.
+     $this->fieldDefinition = Og::createField(OgGroupAudienceHelperInterface::DEFAULT_FIELD, 'node', $this->groupContentBundle);
+ 
+-    // Get the storage of the field.
+-    $this->selectionHandler = Og::getSelectionHandler($this->fieldDefinition, ['handler_settings' => ['field_mode' => 'default']]);
++    // The selection handler for the field.
++    $this->selectionHandler = Og::getSelectionHandler($this->fieldDefinition);
++
++    // Create users.
++    $this->groupAdmin = User::create(['name' => $this->randomString()]);
++    $this->groupAdmin->save();
++
++    $this->groupManager = User::create(['name' => $this->randomString()]);
++    $this->groupManager->save();
+ 
+-    // Create two users.
+-    $this->user1 = User::create(['name' => $this->randomString()]);
+-    $this->user1->save();
++    $this->groupMember = User::create(['name' => $this->randomString()]);
++    $this->groupMember->save();
+ 
+-    $this->user2 = User::create(['name' => $this->randomString()]);
+-    $this->user2->save();
++    // Assign administer-group permission to admin.
++    $role = Role::create([
++      'id' => $this->randomMachineName(),
++      'label' => $this->randomMachineName(),
++    ]);
++
++    $role
++      ->grantPermission('administer group')
++      ->save();
++
++    $this
++      ->groupAdmin
++      ->addRole($role->id());
+   }
+ 
+   /**
+@@ -138,28 +165,45 @@ public function testSelectionHandler() {
+    * and the other users group's in the other groups widget and vice versa.
+    */
+   public function testSelectionHandlerResults() {
+-    $user1_groups = $this->createGroups(2, $this->user1);
+-    $user2_groups = $this->createGroups(2, $this->user2);
++    $user1_groups = $this->createGroups(5, $this->groupAdmin);
++    $user2_groups = $this->createGroups(5, $this->groupManager);
+ 
+-    // Checking that the user get the groups he mange.
+-    $this->setCurrentAccount($this->user1);
++    $all_groups_ids = array_merge($user1_groups, $user2_groups);
++
++    // Admin user can create content on all groups.
++    $this->setCurrentAccount($this->groupAdmin);
+     $groups = $this->selectionHandler->getReferenceableEntities();
+-    $this->assertEquals($user1_groups, array_keys($groups[$this->groupBundle]));
++    $this->assertEquals($all_groups_ids, array_keys($groups[$this->groupBundle]));
+ 
+-    $this->setCurrentAccount($this->user2);
++    // Group manager can create content in their groups.
++    $this->setCurrentAccount($this->groupManager);
+     $groups = $this->selectionHandler->getReferenceableEntities();
+     $this->assertEquals($user2_groups, array_keys($groups[$this->groupBundle]));
+ 
+-    // Check the other groups.
+-    $this->selectionHandler = Og::getSelectionHandler($this->fieldDefinition, ['handler_settings' => ['field_mode' => 'admin']]);
++    // Non-group member.
++    $this->setCurrentAccount($this->groupMember);
++    $groups = $this->selectionHandler->getReferenceableEntities();
++    $this->assertTrue(empty($groups[$this->groupBundle]));
+ 
+-    $this->setCurrentAccount($this->user1);
++    // Group member access to create content.
++    $group_id = $user1_groups[0];
++    $group = Node::load($group_id);
++    $membership = Og::createMembership($group, $this->groupMember);
++    $membership->save();
++
++    // Group member cannot create content in their groups when they don't have
++    // access to.
+     $groups = $this->selectionHandler->getReferenceableEntities();
+-    $this->assertEquals($user2_groups, array_keys($groups[$this->groupBundle]));
++    $this->assertTrue(empty($groups[$this->groupBundle]));
++
++    // Grant OG permission.
++    $og_role = OgRole::getRole('node', $this->groupBundle, OgRoleInterface::AUTHENTICATED);
++    $og_role
++      ->grantPermission('create node ' . $this->groupContentBundle)
++      ->save();
+ 
+-    $this->setCurrentAccount($this->user2);
+     $groups = $this->selectionHandler->getReferenceableEntities();
+-    $this->assertEquals($user1_groups, array_keys($groups[$this->groupBundle]));
++    $this->assertEquals([$group_id], array_keys($groups[$this->groupBundle]));
+   }
+ 
+   /**
+@@ -170,7 +214,7 @@ public function testSelectionHandlerResults() {
+    * @param \Drupal\user\Entity\User $user
+    *   The user object which owns the groups.
+    *
+-   * @return ContentEntityBase[]
++   * @return \Drupal\Core\Entity\ContentEntityBase[]
+    *   An array of group entities.
+    */
+   protected function createGroups($amount, User $user) {
+diff --git a/tests/src/Kernel/EntityReference/OgSelectionConfigurationFormTest.php b/tests/src/Kernel/EntityReference/OgSelectionConfigurationFormTest.php
+new file mode 100644
+index 00000000..ff7ac243
+--- /dev/null
++++ b/tests/src/Kernel/EntityReference/OgSelectionConfigurationFormTest.php
+@@ -0,0 +1,96 @@
++<?php
++
++namespace Drupal\Tests\og\Kernel\EntityReference;
++
++use Drupal\Core\Form\FormState;
++use Drupal\entity_test\Entity\EntityTestBundle;
++use Drupal\field\Entity\FieldConfig;
++use Drupal\KernelTests\KernelTestBase;
++use Drupal\og\Og;
++use Drupal\og\OgGroupAudienceHelper;
++
++/**
++ * Tests the field settings configuration form for the OG audience field.
++ *
++ * @group og
++ * @coversDefaultClass \Drupal\og\Plugin\EntityReferenceSelection\OgSelection
++ */
++class OgSelectionConfigurationFormTest extends KernelTestBase {
++
++  /**
++   * {@inheritdoc}
++   */
++  public static $modules = [
++    'field',
++    'field_ui',
++    'entity_test',
++    'og',
++    'system',
++    'user',
++  ];
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function setUp() {
++    parent::setUp();
++
++    $this->installEntitySchema('user');
++    $this->installEntitySchema('entity_test_with_bundle');
++    $this->installSchema('system', 'sequences');
++
++    EntityTestBundle::create([
++      'id' => 'non_group',
++      'label' => 'non_group',
++    ])->save();
++
++    EntityTestBundle::create([
++      'id' => 'group_type1',
++      'label' => 'group_type1',
++    ])->save();
++
++    EntityTestBundle::create([
++      'id' => 'group_type2',
++      'label' => 'group_type2',
++    ])->save();
++
++    EntityTestBundle::create([
++      'id' => 'group_content',
++      'label' => 'group_content',
++    ])->save();
++
++    Og::addGroup('entity_test_with_bundle', 'group_type1');
++    Og::addGroup('entity_test_with_bundle', 'group_type2');
++
++    $settings = [
++      'field_storage_config' => [
++        'settings' => [
++          'target_type' => 'entity_test_with_bundle',
++        ],
++      ],
++    ];
++    Og::createField(OgGroupAudienceHelper::DEFAULT_FIELD, 'entity_test_with_bundle', 'group_content', $settings);
++  }
++
++  /**
++   * Test if a group that uses a string as ID can be referenced.
++   *
++   * @covers ::buildConfigurationForm
++   */
++  public function testConfigurationForm() {
++    $form_object = \Drupal::entityManager()->getFormObject('field_config', 'edit');
++
++    $entity = FieldConfig::loadByName('entity_test_with_bundle', 'group_content', OgGroupAudienceHelper::DEFAULT_FIELD);
++    $form_object->setEntity($entity);
++
++    $form_state = new FormState();
++
++    $form = \Drupal::formBuilder()->buildForm($form_object, $form_state);
++
++    $options = array_keys($form['settings']['handler']['handler_settings']['target_bundles']['#options']);
++    sort($options);
++
++    $this->assertEquals(['group_type1', 'group_type2'], $options);
++  }
++
++}

@@ -1,0 +1,112 @@
+diff --git a/src/GroupTypeManager.php b/src/GroupTypeManager.php
+index 9ae73092..a43226e6 100644
+--- a/src/GroupTypeManager.php
++++ b/src/GroupTypeManager.php
+@@ -42,13 +42,6 @@ class GroupTypeManager {
+    */
+   protected $configFactory;
+ 
+-  /**
+-   * The entity storage for OgRole entities.
+-   *
+-   * @var \Drupal\Core\Entity\EntityStorageInterface
+-   */
+-  protected $ogRoleStorage;
+-
+   /**
+    * The service providing information about bundles.
+    *
+@@ -162,7 +155,6 @@ class GroupTypeManager {
+    */
+   public function __construct(ConfigFactoryInterface $config_factory, EntityTypeManagerInterface $entity_type_manager, EntityTypeBundleInfoInterface $entity_type_bundle_info, EventDispatcherInterface $event_dispatcher, StateInterface $state, PermissionManagerInterface $permission_manager, OgRoleManagerInterface $og_role_manager, RouteBuilderInterface $route_builder, OgGroupAudienceHelperInterface $group_audience_helper) {
+     $this->configFactory = $config_factory;
+-    $this->ogRoleStorage = $entity_type_manager->getStorage('og_role');
+     $this->entityTypeBundleInfo = $entity_type_bundle_info;
+     $this->eventDispatcher = $event_dispatcher;
+     $this->state = $state;
+diff --git a/src/OgRoleManager.php b/src/OgRoleManager.php
+index 95605dad..6583952a 100644
+--- a/src/OgRoleManager.php
++++ b/src/OgRoleManager.php
+@@ -12,6 +12,13 @@
+  */
+ class OgRoleManager implements OgRoleManagerInterface {
+ 
++  /**
++   * The entity type manager.
++   *
++   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
++   */
++  protected $entityTypeManager;
++
+   /**
+    * The entity storage for OgRole entities.
+    *
+@@ -44,7 +51,7 @@ class OgRoleManager implements OgRoleManagerInterface {
+    *   The OG permission manager.
+    */
+   public function __construct(EntityTypeManagerInterface $entity_type_manager, EventDispatcherInterface $event_dispatcher, PermissionManagerInterface $permission_manager) {
+-    $this->ogRoleStorage = $entity_type_manager->getStorage('og_role');
++    $this->entityTypeManager = $entity_type_manager;
+     $this->eventDispatcher = $event_dispatcher;
+     $this->permissionManager = $permission_manager;
+   }
+@@ -108,7 +115,7 @@ public function getRequiredDefaultRoles() {
+     ];
+ 
+     foreach ($role_properties as $properties) {
+-      $roles[$properties['name']] = $this->ogRoleStorage->create($properties);
++      $roles[$properties['name']] = $this->ogRoleStorage()->create($properties);
+     }
+ 
+     return $roles;
+@@ -122,7 +129,7 @@ public function getRolesByBundle($entity_type_id, $bundle) {
+       'group_type' => $entity_type_id,
+       'group_bundle' => $bundle,
+     ];
+-    return $this->ogRoleStorage->loadByProperties($properties);
++    return $this->ogRoleStorage()->loadByProperties($properties);
+   }
+ 
+   /**
+@@ -133,9 +140,23 @@ public function removeRoles($entity_type_id, $bundle_id) {
+       'group_type' => $entity_type_id,
+       'group_bundle' => $bundle_id,
+     ];
+-    foreach ($this->ogRoleStorage->loadByProperties($properties) as $role) {
++    foreach ($this->ogRoleStorage()->loadByProperties($properties) as $role) {
+       $role->delete();
+     }
+   }
+ 
++  /**
++   * Retrieves the OG Role storage.
++   *
++   * @return \Drupal\Core\Entity\EntityStorageInterface
++   *   The OG Role storage
++   */
++  protected function ogRoleStorage() {
++    if (!$this->ogRoleStorage) {
++      $this->ogRoleStorage = $this->entityTypeManager->getStorage('og_role');
++    }
++
++    return $this->ogRoleStorage;
++  }
++
+ }
+diff --git a/tests/src/Unit/GroupTypeManagerTest.php b/tests/src/Unit/GroupTypeManagerTest.php
+index d6df2fe4..e2d6cee8 100644
+--- a/tests/src/Unit/GroupTypeManagerTest.php
++++ b/tests/src/Unit/GroupTypeManagerTest.php
+@@ -325,11 +325,6 @@ public function testRemoveGroup() {
+    *   Returns the group manager.
+    */
+   protected function createGroupManager() {
+-    // It is expected that the role storage will be initialized.
+-    $this->entityTypeManager->getStorage('og_role')
+-      ->willReturn($this->entityStorage->reveal())
+-      ->shouldBeCalled();
+-
+     return new GroupTypeManager(
+       $this->configFactory->reveal(),
+       $this->entityTypeManager->reveal(),

@@ -30,6 +30,13 @@ class MembershipManager implements MembershipManagerInterface {
   protected $entityTypeManager;
 
   /**
+   * The group manager.
+   *
+   * @var \Drupal\og\GroupTypeManager
+   */
+  protected $groupTypeManager;
+
+  /**
    * The OG group audience helper.
    *
    * @var \Drupal\og\OgGroupAudienceHelperInterface
@@ -41,11 +48,14 @@ class MembershipManager implements MembershipManagerInterface {
    *
    * @param \Drupal\core\Entity\EntityTypeManagerInterface $entity_type_manager
    *   The entity type manager.
+   * @param \Drupal\og\GroupTypeManagerInterface $group_manager
+   *   The group manager.
    * @param \Drupal\og\OgGroupAudienceHelperInterface $group_audience_helper
    *   The OG group audience helper.
    */
-  public function __construct(EntityTypeManagerInterface $entity_type_manager, OgGroupAudienceHelperInterface $group_audience_helper) {
+  public function __construct(EntityTypeManagerInterface $entity_type_manager, GroupTypeManagerInterface $group_manager, OgGroupAudienceHelperInterface $group_audience_helper) {
     $this->entityTypeManager = $entity_type_manager;
+    $this->groupTypeManager = $group_manager;
     $this->groupAudienceHelper = $group_audience_helper;
   }
 
@@ -131,10 +141,53 @@ class MembershipManager implements MembershipManagerInterface {
     return NULL;
   }
 
+    /**
+     * {@inheritdoc}
+     */
+  public function getGroupMemberships(EntityInterface $group, array $states = [OgMembershipInterface::STATE_ACTIVE]) {
+    // Get a string identifier of the states, so we can retrieve it from cache.
+    sort($states);
+    $states_identifier = implode('|', array_unique($states));
+
+    $identifier = [
+      __METHOD__,
+      $group->id(),
+      $states_identifier,
+    ];
+    $identifier = implode(':', $identifier);
+
+    // Return cached result if it exists.
+    if (isset($this->cache[$identifier])) {
+      return $this->cache[$identifier];
+    }
+
+    $query = $this->entityTypeManager
+      ->getStorage('og_membership')
+      ->getQuery()
+      ->condition('entity_id', $group->id());
+
+    if ($states) {
+      $query->condition('state', $states, 'IN');
+    }
+
+    $results = $query->execute();
+
+    /** @var \Drupal\og\Entity\OgMembership[] $memberships */
+    $this->cache[$identifier] = $this->entityTypeManager
+      ->getStorage('og_membership')
+      ->loadMultiple($results);
+
+    return $this->cache[$identifier];
+  }
+
   /**
    * {@inheritdoc}
    */
-  public function createMembership(EntityInterface $group, AccountInterface $user, $membership_type = OgMembershipInterface::TYPE_DEFAULT) {
+  public function createMembership(EntityInterface $group, AccountInterface $user, $membership_type = NULL) {
+    if (empty($membership_type)) {
+      $membership_type = $this->groupTypeManager->getGroupMembershipType($group->getEntityTypeId(), $group->bundle());
+    }
+
     /** @var \Drupal\user\UserInterface|\Drupal\Core\Session\AccountInterface $user */
     /** @var \Drupal\og\OgMembershipInterface $membership */
     $membership = OgMembership::create(['type' => $membership_type]);

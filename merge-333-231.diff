@@ -1,0 +1,3456 @@
+diff --git a/config/install/core.entity_form_display.og_membership.default.default.yml b/config/install/core.entity_form_display.og_membership.default.default.yml
+index 08b77f3b..0332b58f 100644
+--- a/config/install/core.entity_form_display.og_membership.default.default.yml
++++ b/config/install/core.entity_form_display.og_membership.default.default.yml
+@@ -18,4 +18,17 @@ content:
+       rows: 2
+       placeholder: ''
+     third_party_settings: {  }
++  roles:
++    type: options_buttons
++    weight: 0
++    settings: {  }
++    third_party_settings: {  }
++  uid:
++    type: og_autocomplete
++    weight: -1
++    settings:
++      match_operator: CONTAINS
++      size: 60
++      placeholder: ''
++    third_party_settings: {  }
+ hidden: {  }
+diff --git a/config/install/core.entity_view_display.og_membership.default.default.yml b/config/install/core.entity_view_display.og_membership.default.default.yml
+index 4d19f8b4..468f4dd1 100644
+--- a/config/install/core.entity_view_display.og_membership.default.default.yml
++++ b/config/install/core.entity_view_display.og_membership.default.default.yml
+@@ -14,7 +14,21 @@ content:
+   og_membership_request:
+     label: above
+     type: basic_string
+-    weight: 0
++    weight: 2
+     settings: {  }
+     third_party_settings: {  }
++  roles:
++    type: entity_reference_label
++    weight: 1
++    label: above
++    settings:
++      link: false
++    third_party_settings: {  }
++  uid:
++    type: entity_reference_label
++    weight: 0
++    label: above
++    settings:
++      link: true
++    third_party_settings: {  }
+ hidden: {  }
+diff --git a/config/optional/views.view.og_members_overview.yml b/config/optional/views.view.og_members_overview.yml
+index ad531e3a..93c43496 100644
+--- a/config/optional/views.view.og_members_overview.yml
++++ b/config/optional/views.view.og_members_overview.yml
+@@ -421,6 +421,57 @@ display:
+           entity_type: og_membership
+           entity_field: roles
+           plugin_id: field
++        operations:
++          id: operations
++          table: og_membership
++          field: operations
++          relationship: none
++          group_type: group
++          admin_label: ''
++          label: 'Operations links'
++          exclude: false
++          alter:
++            alter_text: false
++            text: ''
++            make_link: false
++            path: ''
++            absolute: false
++            external: false
++            replace_spaces: false
++            path_case: none
++            trim_whitespace: false
++            alt: ''
++            rel: ''
++            link_class: ''
++            prefix: ''
++            suffix: ''
++            target: ''
++            nl2br: false
++            max_length: 0
++            word_boundary: true
++            ellipsis: true
++            more_link: false
++            more_link_text: ''
++            more_link_path: ''
++            strip_tags: false
++            trim: false
++            preserve_tags: ''
++            html: false
++          element_type: ''
++          element_class: ''
++          element_label_type: ''
++          element_label_class: ''
++          element_label_colon: true
++          element_wrapper_type: ''
++          element_wrapper_class: ''
++          element_default_classes: true
++          empty: ''
++          hide_empty: false
++          empty_zero: false
++          hide_alter_empty: true
++          destination: true
++          entity_type: og_membership
++          plugin_id: entity_operations
+       filters: {  }
+       sorts: {  }
+       header: {  }
+diff --git a/config/schema/og.schema.yml b/config/schema/og.schema.yml
+index 4f08e369..8e382b79 100644
+--- a/config/schema/og.schema.yml
++++ b/config/schema/og.schema.yml
+@@ -54,6 +54,15 @@ og.settings:
+       type: sequence
+       sequence:
+         type: og.settings.group.[%key]
++    group_membership_types:
++      type: mapping
++      mapping:
++        group_type_bundle:
++          type: string
++          label: 'Group type and bundle'
++        membership_type:
++          type: string
++          label: 'Membership type'
+     group_manager_full_access:
+       type: boolean
+       label: 'Full access for group managers'
+@@ -193,3 +202,18 @@ condition.plugin.og_group_type:
+       type: sequence
+       sequence:
+         type: string
++
++# Copied and adapted from core.entity.schema.yml
++field.widget.settings.og_autocomplete:
++  type: mapping
++  label: 'OG context based entity reference autocomplete with display format settings'
++  mapping:
++    match_operator:
++      type: string
++      label: 'Autocomplete matching'
++    size:
++      type: integer
++      label: 'Size of textfield'
++    placeholder:
++      type: label
++      label: 'Placeholder'
+diff --git a/og.links.action.yml b/og.links.action.yml
+new file mode 100644
+index 00000000..c70c87d8
+--- /dev/null
++++ b/og.links.action.yml
+@@ -0,0 +1,8 @@
++og_membership.add:
++  deriver: \Drupal\og\Plugin\Derivative\OgActionLink
++
++og_membership.type_add:
++  route_name: og_membership.type_add
++  title: 'Add membership type'
++  appears_on:
++    - entity.og_membership_type.collection
+diff --git a/og.links.menu.yml b/og.links.menu.yml
+new file mode 100644
+index 00000000..b91d6607
+--- /dev/null
++++ b/og.links.menu.yml
+@@ -0,0 +1,5 @@
++entity.og_membership_type.collection:
++  title: 'Membership types'
++  parent: system.admin_structure
++  description: 'Create and manage fields, forms, and display settings for OG memberships.'
++  route_name: entity.og_membership_type.collection
+diff --git a/og.links.task.yml b/og.links.task.yml
+index 854c7df8..2b013250 100644
+--- a/og.links.task.yml
++++ b/og.links.task.yml
+@@ -1,2 +1,15 @@
+ og.og_admin_routes:
+   deriver: \Drupal\og\Plugin\Derivative\OgLocalTask
++entity.og_membership.canonical:
++  route_name: entity.og_membership.canonical
++  base_route: entity.og_membership.canonical
++  title: View
++entity.og_membership.edit_form:
++  route_name: entity.og_membership.edit_form
++  base_route: entity.og_membership.canonical
++  title: Edit
++entity.og_membership.delete_form:
++  route_name: entity.og_membership.delete_form
++  base_route: entity.og_membership.canonical
++  title: Delete
++  weight: 10
+diff --git a/og.module b/og.module
+index 3637a9d6..5fbb92d4 100755
+--- a/og.module
++++ b/og.module
+@@ -17,6 +17,7 @@ use Drupal\og\Entity\OgRole;
+ use Drupal\og\Og;
+ use Drupal\og\OgGroupAudienceHelperInterface;
+ use Drupal\og\OgMembershipInterface;
++use Drupal\og\OgMembershipTypeInterface;
+ use Drupal\og\OgRoleInterface;
+ use Drupal\system\Entity\Action;
+ use Drupal\user\EntityOwnerInterface;
+@@ -169,6 +170,47 @@ function og_entity_access(EntityInterface $entity, $operation, AccountInterface
+   return AccessResult::forbidden();
+ }
+ 
++/**
++ * Implements hook_ENTITY_TYPE_access().
++ */
++function og_og_membership_type_access(OgMembershipTypeInterface $entity, $operation, AccountInterface $account) {
++  // Do not allow deleting the default membership type.
++  if ($operation === 'delete' && $entity->id() === OgMembershipInterface::TYPE_DEFAULT) {
++    return AccessResult::forbidden();
++  }
++
++  // If the user has permission to administer all groups, allow access.
++  if ($account->hasPermission('administer group')) {
++    return AccessResult::allowed();
++  }
++
++  return AccessResult::forbidden();
++}
++
++/**
++ * Implements hook_ENTITY_TYPE_access().
++ */
++function og_og_membership_access(OgMembershipInterface $entity, $operation, AccountInterface $account) {
++  $group = $entity->getGroup();
++
++  // If there's a group owner, don't let them leave.
++  if (
++    isset($group_fields['uid'])
++    && $operation === 'delete'
++    && $group_fields['uid']->entity->id() === $entity->getOwner()->id()
++  ) {
++    return AccessResult::forbidden();
++  }
++
++  // Ensure that there's at least one member in the group.
++  if ($operation === 'delete' && count(Og::getGroupMemberships($group)) === 1) {
++    return AccessResult::forbidden();
++  }
++
++  return \Drupal::service('og.access')
++    ->userAccess($entity->getGroup(), 'manage members');
++}
++
+ /**
+  * Implements hook_entity_create_access().
+  */
+diff --git a/og.routing.yml b/og.routing.yml
+index 06a78558..df629a9e 100644
+--- a/og.routing.yml
++++ b/og.routing.yml
+@@ -1,11 +1,11 @@
+ # Routes for Organic groups.
+ 
+ og.subscribe:
+-  path: 'group/{entity_type_id}/{group}/subscribe/{membership_type}'
++  path: 'group/{entity_type_id}/{group}/subscribe/{og_membership_type}'
+   defaults:
+     _controller: '\Drupal\og\Controller\SubscriptionController::subscribe'
+     _title: 'Join Group'
+-    membership_type: default
++    og_membership_type: default
+   requirements:
+     # Only authenticated users can subscribe to group, but we do allow anonymous
+     # users to reach this route. They will be redirect to login page or be given
+@@ -15,8 +15,6 @@ og.subscribe:
+     parameters:
+       group:
+         type: entity:{entity_type_id}
+-      membership_type:
+-        type: entity:og_membership_type
+ 
+ og.unsubscribe:
+   path: 'group/{entity_type_id}/{group}/unsubscribe'
+@@ -43,3 +41,99 @@ og.remove_multiple_roles_confirm:
+     _form: '\Drupal\og\Form\OgRemoveMultipleRolesForm'
+   requirements:
+     _custom_access: '\Drupal\og\Form\OgRemoveMultipleRolesForm::access'
++
++og.entity_autocomplete:
++  path: '/group/{entity_type_id}/{group}/autocomplete/{target_type}/{selection_handler}/{selection_settings_key}'
++  defaults:
++    _controller: '\Drupal\og\Controller\OgAutocompleteController:handleAutocomplete'
++  requirements:
++    _access: 'TRUE'
++  options:
++    parameters:
++      group:
++        type: entity:{entity_type_id}
++
++# OG Membership entity routes
++entity.og_membership.add_form:
++  path: 'group/{entity_type_id}/{group}/admin/members/add/{og_membership_type}'
++  defaults:
++    _controller: '\Drupal\og\Controller\OgAdminMembersController::addForm'
++    _title: 'Add member'
++  requirements:
++    _og_membership_add_access: 'TRUE'
++  options:
++    _admin_route: 'TRUE'
++    parameters:
++      group:
++        type: entity:{entity_type_id}
++
++# The canonical route is the same as the edit-form route because we need a
++# canonical route for various functionality to work properly, but a standard
++# entity view for OG memberships tends to feel quite stub-like.
++entity.og_membership.canonical:
++  path: 'group/{entity_type_id}/{group}/admin/members/{og_membership}/edit'
++  defaults:
++    _entity_form: 'og_membership.edit'
++  options:
++    _admin_route: 'TRUE'
++    parameters:
++      group:
++        type: entity:{entity_type_id}
++  requirements:
++    _entity_access: 'og_membership.edit'
++
++entity.og_membership.edit_form:
++  path: 'group/{entity_type_id}/{group}/admin/members/{og_membership}/edit'
++  defaults:
++    _entity_form: 'og_membership.edit'
++  options:
++    _admin_route: 'TRUE'
++    parameters:
++      group:
++        type: entity:{entity_type_id}
++  requirements:
++    _entity_access: 'og_membership.edit'
++
++entity.og_membership.delete_form:
++  path: 'group/{entity_type_id}/{group}/admin/members/{og_membership}/delete'
++  defaults:
++    _entity_form: 'og_membership.delete'
++  options:
++    _admin_route: 'TRUE'
++    parameters:
++      group:
++        type: entity:{entity_type_id}
++  requirements:
++    _entity_access: 'og_membership.delete'
++
++# OG Membership type entity routes
++entity.og_membership_type.collection:
++  path: '/admin/structure/membership-types'
++  defaults:
++    _entity_list: 'og_membership_type'
++    _title: 'Membership types'
++  requirements:
++    _permission: 'administer group'
++
++entity.og_membership_type.edit_form:
++  path: '/admin/structure/membership-types/manage/{og_membership_type}'
++  defaults:
++    _entity_form: 'og_membership_type.edit'
++  requirements:
++    _permission: 'administer group'
++
++entity.og_membership_type.delete_form:
++  path: '/admin/structure/membership-types/manage/{og_membership_type}/delete'
++  defaults:
++    _entity_form: 'og_membership_type.delete'
++    _title: 'Delete'
++  requirements:
++     _permission: 'og_membership_type.delete'
++
++og_membership.type_add:
++  path: '/admin/structure/membership-types/add'
++  defaults:
++    _entity_form: 'og_membership_type.add'
++    _title: 'Add membership type'
++  requirements:
++    _permission: 'administer group'
+diff --git a/og.services.yml b/og.services.yml
+index 34a31b28..4e12aa56 100644
+--- a/og.services.yml
++++ b/og.services.yml
+@@ -4,6 +4,11 @@ services:
+     arguments: ['@entity_type.manager', '@og.access']
+     tags:
+       - { name: access_check, applies_to: _og_user_access_group }
++  access_check.og.membership.add:
++    class: Drupal\og\Access\OgMembershipAddAccessCheck
++    arguments: ['@entity_type.manager', '@og.access']
++    tags:
++      - { name: access_check, applies_to: _og_membership_add_access }
+   cache_context.og_group_context:
+     class: 'Drupal\og\Cache\Context\OgGroupContextCacheContext'
+     arguments: ['@og.context']
+@@ -45,7 +50,7 @@ services:
+     arguments: ['@config.factory', '@entity_type.manager', '@entity_type.bundle.info', '@event_dispatcher', '@state', '@og.permission_manager', '@og.role_manager', '@router.builder', '@og.group_audience_helper']
+   og.membership_manager:
+     class: Drupal\og\MembershipManager
+-    arguments: ['@entity_type.manager', '@og.group_audience_helper']
++    arguments: ['@entity_type.manager', '@og.group_type_manager', '@og.group_audience_helper']
+   og.permission_manager:
+     class: Drupal\og\PermissionManager
+     arguments: ['@event_dispatcher']
+diff --git a/og_ui/og_ui.module b/og_ui/og_ui.module
+index f319c4ed..28c39da5 100644
+--- a/og_ui/og_ui.module
++++ b/og_ui/og_ui.module
+@@ -19,10 +19,16 @@ use Drupal\og_ui\BundleFormAlter;
+  * Implements hook_form_alter().
+  */
+ function og_ui_form_alter(array &$form, FormStateInterface $form_state, $form_id) {
+-  if ($form_state->getFormObject() instanceof BundleEntityFormBase) {
+-    (new BundleFormAlter($form_state->getFormObject()->getEntity()))
+-      ->formAlter($form, $form_state);
++  if (!$form_state->getFormObject() instanceof BundleEntityFormBase) {
++    return;
++  }
++
++  $entity_type = $form_state->getFormObject()->getEntity();
++  if ($entity_type->getEntityTypeId() === 'og_membership_type') {
++    return;
+   }
++
++  (new BundleFormAlter($entity_type))->formAlter($form, $form_state);
+ }
+ 
+ /**
+@@ -65,6 +71,16 @@ function og_ui_entity_type_save(EntityInterface $entity) {
+     }
+   }
+ 
++  if ($entity->og_is_group) {
++    $group_membership_type = $entity->og_membership_type;
++    Og::groupTypeManager()->setGroupMembershipType($entity_type_id, $bundle, $group_membership_type);
++  }
++  elseif ($is_group) {
++    // Remove the membership type setting, as this bundle has been demoted
++    // from being a group.
++    Og::groupTypeManager()->removeGroupMembershipType($entity_type_id, $bundle);
++  }
++
+   // Add remove the relevant field.
+   $is_group_content = Og::isGroupContent($entity_type_id, $bundle);
+   if ($entity->og_group_content_bundle != $is_group_content) {
+diff --git a/og_ui/src/BundleFormAlter.php b/og_ui/src/BundleFormAlter.php
+index 5b86077c..f296b9ba 100644
+--- a/og_ui/src/BundleFormAlter.php
++++ b/og_ui/src/BundleFormAlter.php
+@@ -124,6 +124,26 @@ protected function addGroupType(array &$form, FormStateInterface $form_state) {
+       '#default_value' => Og::isGroup($this->entityTypeId, $this->bundle),
+       '#description' => $description,
+     ];
++
++    $membership_types = \Drupal::service('entity_type.manager')->getStorage('og_membership_type')->loadMultiple();
++    $membership_type_options = [];
++    foreach ($membership_types as $id => $type) {
++      $membership_type_options[$id] = $type->label();
++    }
++    $form['og']['og_membership_type'] = [
++      '#type' => 'select',
++      '#title' => t('Membership type'),
++      // TODO: when https://github.com/Gizra/og/pull/231 gets in, add a link to
++      // the 'collection' link for the membership type entity in the text here.
++      '#description' => t('The type of membership to use when creating memberships in groups of this type.'),
++      '#options' => $membership_type_options,
++      '#default_value' => \Drupal::service('og.group_type_manager')->getGroupMembershipType($this->entityTypeId, $this->bundle),
++      '#states' => [
++        'visible' => [
++          ':input[name="og_is_group"]' => ['checked' => TRUE],
++        ],
++      ],
++    ];
+   }
+ 
+   /**
+diff --git a/src/Access/OgMembershipAddAccessCheck.php b/src/Access/OgMembershipAddAccessCheck.php
+new file mode 100644
+index 00000000..922543e5
+--- /dev/null
++++ b/src/Access/OgMembershipAddAccessCheck.php
+@@ -0,0 +1,77 @@
++<?php
++
++namespace Drupal\og\Access;
++
++use Drupal\Core\Access\AccessResult;
++use Drupal\Core\Entity\EntityInterface;
++use Drupal\Core\Entity\EntityTypeManagerInterface;
++use Drupal\Core\Routing\Access\AccessInterface;
++use Drupal\Core\Routing\RouteMatchInterface;
++use Drupal\Core\Session\AccountInterface;
++use Drupal\og\Og;
++use Drupal\og\OgMembershipInterface;
++use Drupal\og\OgMembershipTypeInterface;
++
++/**
++ * Determines access to for membership add pages.
++ */
++class OgMembershipAddAccessCheck implements AccessInterface {
++
++  /**
++   * The entity manager.
++   *
++   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
++   */
++  protected $entityTypeManager;
++
++  /**
++   * Constructs a EntityCreateAccessCheck object.
++   *
++   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
++   *   The entity manager.
++   */
++  public function __construct(EntityTypeManagerInterface $entity_type_manager) {
++    $this->entityTypeManager = $entity_type_manager;
++  }
++
++  /**
++   * Checks access to create the entity type and bundle for the given route.
++   *
++   * @param \Drupal\Core\Routing\RouteMatchInterface $route_match
++   *   The parametrized route.
++   * @param \Drupal\Core\Session\AccountInterface $account
++   *   The currently logged in account.
++   * @param \Drupal\Core\Entity\EntityInterface $group
++   *   The group entity.
++   * @param \Drupal\og\OgMembershipTypeInterface $og_membership_type
++   *   The membership type entity.
++   *
++   * @return \Drupal\Core\Access\AccessResultInterface
++   *   The access result.
++   */
++  public function access(RouteMatchInterface $route_match, AccountInterface $account, EntityInterface $group = NULL, OgMembershipTypeInterface $og_membership_type = NULL) {
++    // The $group param will be null if it is from the
++    // Drupal\og\Event\OgAdminRoutesEvent rather than the routing.yml version.
++    if (is_null($group)) {
++      $entity_type_id = $route_match->getRouteObject()
++        ->getOption('_og_entity_type_id');
++      $group = $route_match->getParameter($entity_type_id);
++    }
++
++    if (!Og::isGroup($group->getEntityTypeId(), $group->bundle())) {
++      return AccessResult::forbidden();
++    }
++
++    $membership_type_id = OgMembershipInterface::TYPE_DEFAULT;
++    if (!is_null($og_membership_type)) {
++      $membership_type_id = $og_membership_type->id();
++    }
++
++    $context = ['group' => $group];
++
++    return $this->entityTypeManager
++      ->getAccessControlHandler('og_membership')
++      ->createAccess($membership_type_id, $account, $context, TRUE);
++  }
++
++}
+diff --git a/src/Controller/OgAdminMembersController.php b/src/Controller/OgAdminMembersController.php
+index 9eb723ae..0fc4b48b 100644
+--- a/src/Controller/OgAdminMembersController.php
++++ b/src/Controller/OgAdminMembersController.php
+@@ -3,14 +3,47 @@
+ namespace Drupal\og\Controller;
+ 
+ use Drupal\Core\Controller\ControllerBase;
++use Drupal\Core\Entity\EntityInterface;
++use Drupal\Core\Entity\EntityTypeManagerInterface;
++use Drupal\Core\Link;
+ use Drupal\Core\Routing\RouteMatchInterface;
++use Drupal\og\Entity\OgMembership;
++use Drupal\og\OgMembershipInterface;
++use Drupal\og\OgMembershipTypeInterface;
+ use Drupal\views\Views;
++use Symfony\Component\DependencyInjection\ContainerInterface;
+ 
+ /**
+  * OgAdminMembersController class.
+  */
+ class OgAdminMembersController extends ControllerBase {
+ 
++  /**
++   * The entity manager.
++   *
++   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
++   */
++  protected $entityTypeManager;
++
++  /**
++   * Constructs a new EntityController.
++   *
++   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
++   *   The entity type manager.
++   */
++  public function __construct(EntityTypeManagerInterface $entity_type_manager) {
++    $this->entityTypeManager = $entity_type_manager;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container) {
++    return new static(
++      $container->get('entity_type.manager')
++    );
++  }
++
+   /**
+    * Display list of members that belong to the group.
+    *
+@@ -21,13 +54,82 @@ class OgAdminMembersController extends ControllerBase {
+    *   The members overview View.
+    */
+   public function membersList(RouteMatchInterface $route_match) {
+-    $parameter_name = $route_match->getRouteObject()->getOption('_og_entity_type_id');
+-
+-    /** @var \Drupal\Core\Entity\EntityInterface $group */
+-    $group = $route_match->getParameter($parameter_name);
+-
++    $group_type_id = $route_match->getRouteObject()->getOption('_og_entity_type_id');
++    $group = $route_match->getParameter($group_type_id);
+     $arguments = [$group->getEntityTypeId(), $group->id()];
+     return Views::getView('og_members_overview')->executeDisplay('default', $arguments);
+   }
+ 
++  /**
++   * Displays add membership links for available membership types.
++   *
++   * Returns default membership type if that's all that exists.
++   *
++   * @return array
++   *   A render array for a list of the og membership types that can be added;
++   *   however, if there is only one og membership type defined for the site,
++   *   the function will return the default add member form.
++   */
++  public function addPage(RouteMatchInterface $route_match) {
++    $entity_type_id = $route_match->getRouteObject()
++      ->getOption('_og_entity_type_id');
++
++    $group = $route_match->getParameter($entity_type_id);
++
++    $membership_types = $this->entityTypeManager
++      ->getStorage('og_membership_type')
++      ->loadMultiple();
++
++    if ($membership_types && count($membership_types) == 1) {
++      return $this->addForm($group, $membership_types[OgMembershipInterface::TYPE_DEFAULT]);
++    }
++
++    $build = [
++      '#theme' => 'entity_add_list',
++      '#bundles' => [],
++    ];
++
++    $build['#cache']['tags'] = $this->entityTypeManager
++      ->getDefinition('og_membership_type')
++      ->getListCacheTags();
++
++    $add_link_params = [
++      'group' => $group->id(),
++      'entity_type_id' => $group->getEntityType()->id(),
++    ];
++
++    foreach ($membership_types as $membership_type_id => $og_membership_type) {
++      $add_link_params['og_membership_type'] = $membership_type_id;
++      $build['#bundles'][$membership_type_id] = [
++        'label' => $og_membership_type->label(),
++        'description' => NULL,
++        'add_link' => Link::createFromRoute($og_membership_type->label(), 'entity.og_membership.add_form', $add_link_params),
++      ];
++    }
++
++    return $build;
++  }
++
++  /**
++   * Provides the add member submission form.
++   *
++   * @param \Drupal\Core\Entity\EntityInterface $group
++   *   The group entity.
++   * @param \Drupal\og\OgMembershipTypeInterface $og_membership_type
++   *   The membership type entity.
++   *
++   * @return array
++   *   The member add form.
++   */
++  public function addForm(EntityInterface $group, OgMembershipTypeInterface $og_membership_type) {
++    /** @var \Drupal\og\Entity\OgMembership $og_membership */
++    $og_membership = OgMembership::create([
++      'type' => $og_membership_type->id(),
++      'entity_type' => $group->getEntityType()->id(),
++      'entity_id' => $group->id(),
++    ]);
++
++    return $this->entityFormBuilder()->getForm($og_membership, 'add');
++  }
++
+ }
+diff --git a/src/Controller/OgAutocompleteController.php b/src/Controller/OgAutocompleteController.php
+new file mode 100644
+index 00000000..7f976976
+--- /dev/null
++++ b/src/Controller/OgAutocompleteController.php
+@@ -0,0 +1,113 @@
++<?php
++
++namespace Drupal\og\Controller;
++
++use Drupal\Component\Utility\Crypt;
++use Drupal\Component\Utility\Tags;
++use Drupal\Component\Utility\Unicode;
++use Drupal\Core\Entity\EntityInterface;
++use Drupal\Core\Controller\ControllerBase;
++use Drupal\Core\Entity\EntityAutocompleteMatcher;
++use Drupal\Core\KeyValueStore\KeyValueStoreInterface;
++use Drupal\Core\Site\Settings;
++use Symfony\Component\DependencyInjection\ContainerInterface;
++use Symfony\Component\HttpFoundation\JsonResponse;
++use Symfony\Component\HttpFoundation\Request;
++use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
++
++/**
++ * Defines a route controller for OG autocomplete form elements.
++ */
++class OgAutocompleteController extends ControllerBase {
++
++  /**
++   * The autocomplete matcher for entity references.
++   *
++   * @var \Drupal\Core\Entity\EntityAutocompleteMatcher
++   */
++  protected $matcher;
++
++  /**
++   * The key value store.
++   *
++   * @var \Drupal\Core\KeyValueStore\KeyValueStoreInterface
++   */
++  protected $keyValue;
++
++  /**
++   * Constructs a EntityAutocompleteController object.
++   *
++   * @param \Drupal\Core\Entity\EntityAutocompleteMatcher $matcher
++   *   The autocomplete matcher for entity references.
++   * @param \Drupal\Core\KeyValueStore\KeyValueStoreInterface $key_value
++   *   The key value factory.
++   */
++  public function __construct(EntityAutocompleteMatcher $matcher, KeyValueStoreInterface $key_value) {
++    $this->matcher = $matcher;
++    $this->keyValue = $key_value;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container) {
++    return new static(
++      $container->get('entity.autocomplete_matcher'),
++      $container->get('keyvalue')->get('entity_autocomplete')
++    );
++  }
++
++  /**
++   * Autocomplete the label of an entity.
++   *
++   * @param \Symfony\Component\HttpFoundation\Request $request
++   *   The request object that contains the typed tags.
++   * @param \Drupal\Core\Entity\EntityInterface $group
++   *   The group context for this autocomplete.
++   * @param string $target_type
++   *   The ID of the target entity type.
++   * @param string $selection_handler
++   *   The plugin ID of the entity reference selection handler.
++   * @param string $selection_settings_key
++   *   The hashed key of the key/value entry that holds the selection handler
++   *   settings.
++   *
++   * @return \Symfony\Component\HttpFoundation\JsonResponse
++   *   The matched entity labels as a JSON response.
++   *
++   * @throws \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException
++   *   Thrown if the selection settings key is not found in the key/value store
++   *   or if it does not match the stored data.
++   */
++  public function handleAutocomplete(Request $request, EntityInterface $group, $target_type, $selection_handler, $selection_settings_key) {
++    $matches = [];
++    // Get the typed string from the URL, if it exists.
++    if ($input = $request->query->get('q')) {
++      $typed_string = Tags::explode($input);
++      $typed_string = Unicode::strtolower(array_pop($typed_string));
++
++      // Selection settings are passed in as a hashed key of a serialized array
++      // stored in the key/value store.
++      $selection_settings = $this->keyValue->get($selection_settings_key, FALSE);
++      if ($selection_settings !== FALSE) {
++        $selection_settings_hash = Crypt::hmacBase64(serialize($selection_settings) . $target_type . $selection_handler, Settings::getHashSalt());
++        if ($selection_settings_hash !== $selection_settings_key) {
++          // Disallow access when the selection settings hash does not match the
++          // passed-in key.
++          throw new AccessDeniedHttpException('Invalid selection settings key.');
++        }
++      }
++      else {
++        // Disallow access when the selection settings key is not found in the
++        // key/value store.
++        throw new AccessDeniedHttpException();
++      }
++
++      $selection_settings['group'] = $group;
++      $matches = $this->matcher->getMatches($target_type, $selection_handler, $selection_settings, $typed_string);
++    }
++
++    return new JsonResponse($matches);
++  }
++
++}
+diff --git a/src/Controller/SubscriptionController.php b/src/Controller/SubscriptionController.php
+index a320562d..7a5ac7ae 100644
+--- a/src/Controller/SubscriptionController.php
++++ b/src/Controller/SubscriptionController.php
+@@ -55,14 +55,14 @@ public static function create(ContainerInterface $container) {
+    *   The entity type of the group entity.
+    * @param \Drupal\Core\Entity\EntityInterface $group
+    *   The entity ID of the group entity.
+-   * @param \Drupal\og\OgMembershipTypeInterface $membership_type
++   * @param \Drupal\og\OgMembershipTypeInterface $og_membership_type
+    *   The membership type to be used for creating the membership.
+    *
+    * @return mixed
+    *   Redirect user or show access denied if they are not allowed to subscribe,
+    *   otherwise provide a subscribe confirmation form.
+    */
+-  public function subscribe($entity_type_id, EntityInterface $group, OgMembershipTypeInterface $membership_type) {
++  public function subscribe($entity_type_id, EntityInterface $group, OgMembershipTypeInterface $og_membership_type) {
+     if (!$group instanceof ContentEntityInterface) {
+       // Not a valid entity.
+       throw new AccessDeniedHttpException();
+@@ -127,7 +127,7 @@ public function subscribe($entity_type_id, EntityInterface $group, OgMembershipT
+       throw new AccessDeniedHttpException();
+     }
+ 
+-    $membership = Og::createMembership($group, $user, $membership_type->id());
++    $membership = Og::createMembership($group, $user, $og_membership_type->id());
+     $form = $this->entityFormBuilder()->getForm($membership, 'subscribe');
+     return $form;
+ 
+diff --git a/src/Element/OgAutocomplete.php b/src/Element/OgAutocomplete.php
+new file mode 100644
+index 00000000..9047564b
+--- /dev/null
++++ b/src/Element/OgAutocomplete.php
+@@ -0,0 +1,61 @@
++<?php
++
++namespace Drupal\og\Element;
++
++use Drupal\Component\Utility\Crypt;
++use Drupal\Core\Entity\Element\EntityAutocomplete;
++use Drupal\Core\Form\FormStateInterface;
++use Drupal\Core\Site\Settings;
++
++/**
++ * Provides an entity autocomplete with OG group context.
++ *
++ * The #default_value accepted by this element is either an entity object or an
++ * array of entity objects.
++ *
++ * @FormElement("og_autocomplete")
++ */
++class OgAutocomplete extends EntityAutocomplete {
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function processEntityAutocomplete(array &$element, FormStateInterface $form_state, array &$complete_form) {
++    // Nothing to do if there is no target entity type.
++    if (empty($element['#target_type'])) {
++      throw new \InvalidArgumentException('Missing required #target_type parameter.');
++    }
++
++    // Provide default values and sanity checks for the #autocreate parameter.
++    if ($element['#autocreate']) {
++      if (!isset($element['#autocreate']['bundle'])) {
++        throw new \InvalidArgumentException("Missing required #autocreate['bundle'] parameter.");
++      }
++      // Default the autocreate user ID to the current user.
++      $element['#autocreate']['uid'] = isset($element['#autocreate']['uid']) ? $element['#autocreate']['uid'] : \Drupal::currentUser()->id();
++    }
++
++    // Store the selection settings in the key/value store and pass a hashed key
++    // in the route parameters.
++    $selection_settings = isset($element['#selection_settings']) ? $element['#selection_settings'] : [];
++    $data = serialize($selection_settings) . $element['#target_type'] . $element['#selection_handler'];
++    $selection_settings_key = Crypt::hmacBase64($data, Settings::getHashSalt());
++
++    $key_value_storage = \Drupal::keyValue('entity_autocomplete');
++    if (!$key_value_storage->has($selection_settings_key)) {
++      $key_value_storage->set($selection_settings_key, $selection_settings);
++    }
++
++    $element['#autocomplete_route_name'] = 'og.entity_autocomplete';
++    $element['#autocomplete_route_parameters'] = [
++      'target_type' => $element['#target_type'],
++      'selection_handler' => $element['#selection_handler'],
++      'selection_settings_key' => $selection_settings_key,
++      'entity_type_id' => $element['#og_group']->getEntityTypeId(),
++      'group' => $element['#og_group']->id(),
++    ];
++
++    return $element;
++  }
++
++}
+diff --git a/src/Entity/OgMembership.php b/src/Entity/OgMembership.php
+index 9f071e72..fd0a32b1 100644
+--- a/src/Entity/OgMembership.php
++++ b/src/Entity/OgMembership.php
+@@ -59,6 +59,7 @@
+  *   fieldable = TRUE,
+  *   bundle_entity_type = "og_membership_type",
+  *   entity_keys = {
++ *     "uuid" = "uuid",
+  *     "id" = "id",
+  *     "bundle" = "type",
+  *   },
+@@ -66,16 +67,38 @@
+  *     "bundle" = "type",
+  *   },
+  *   handlers = {
++ *     "access" = "Drupal\og\OgMembershipAccessControlHandler",
+  *     "views_data" = "Drupal\og\OgMembershipViewsData",
++ *     "list_builder" = "Drupal\Core\Entity\EntityListBuilder",
++ *     "view_builder" = "Drupal\Core\Entity\EntityViewBuilder",
+  *     "form" = {
+  *       "subscribe" = "Drupal\og\Form\GroupSubscribeForm",
+  *       "unsubscribe" = "Drupal\og\Form\GroupUnsubscribeConfirmForm",
++ *       "add" = "Drupal\og\Form\OgMembershipForm",
++ *       "edit" = "Drupal\og\Form\OgMembershipForm",
++ *       "delete" = "Drupal\og\Form\OgMembershipDeleteForm",
+  *     },
+- *   }
++ *   },
++ *   links = {
++ *     "edit-form" = "/group/{entity_type_id}/{group}/admin/members/{og_membership}/edit",
++ *     "delete-form" = "/group/{entity_type_id}/{group}/admin/members/{og_membership}/delete",
++ *     "canonical" = "/group/{entity_type_id}/{group}/admin/members/{og_membership}/edit"
++ *   },
++ *   field_ui_base_route = "entity.og_membership_type.edit_form"
+  * )
+  */
+ class OgMembership extends ContentEntityBase implements OgMembershipInterface {
+ 
++  /**
++   * {@inheritdoc}
++   */
++  protected function urlRouteParameters($rel) {
++    $uri_route_parameters = parent::urlRouteParameters($rel);
++    $uri_route_parameters['entity_type_id'] = $this->getGroupEntityType();
++    $uri_route_parameters['group'] = $this->getGroupId();
++    return $uri_route_parameters;
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+@@ -322,9 +345,23 @@ public static function baseFieldDefinitions(EntityTypeInterface $entity_type) {
+       ->setSetting('target_type', 'og_membership_type');
+ 
+     $fields['uid'] = BaseFieldDefinition::create('entity_reference')
+-      ->setLabel(t('Member User ID'))
++      ->setLabel(t('Username'))
+       ->setDescription(t('The user ID of the member.'))
+-      ->setSetting('target_type', 'user');
++      ->setSetting('target_type', 'user')
++      ->setSetting('handler', 'og:user')
++      ->setConstraints(['UniqueOgMembership' => []])
++      ->setDisplayOptions('form', [
++        'type' => 'og_autocomplete',
++        'weight' => -1,
++        'settings' => [
++          'match_operator' => 'CONTAINS',
++          'size' => 60,
++          'placeholder' => '',
++        ],
++      ])
++      ->setDisplayConfigurable('view', TRUE)
++      ->setDisplayConfigurable('form', TRUE)
++      ->setRequired(TRUE);
+ 
+     $fields['entity_type'] = BaseFieldDefinition::create('string')
+       ->setLabel(t('Group entity type'))
+@@ -334,21 +371,38 @@ public static function baseFieldDefinitions(EntityTypeInterface $entity_type) {
+       ->setLabel(t('Group entity id'))
+       ->setDescription(t("The entity ID of the group."));
+ 
+-    $fields['state'] = BaseFieldDefinition::create('string')
++    $fields['state'] = BaseFieldDefinition::create('list_string')
+       ->setLabel(t('State'))
+       ->setDescription(t('The user membership state: active, pending, or blocked.'))
+-      ->setDefaultValue(OgMembershipInterface::STATE_ACTIVE);
++      ->setDefaultValue(OgMembershipInterface::STATE_ACTIVE)
++      ->setSettings([
++        'allowed_values' => [
++          OgMembershipInterface::STATE_ACTIVE => t('Active'),
++          OgMembershipInterface::STATE_PENDING => t('Pending'),
++          OgMembershipInterface::STATE_BLOCKED => t('Blocked'),
++        ],
++      ])
++      ->setDisplayOptions('form', [
++        'type' => 'options_buttons',
++        'weight' => 0,
++      ])
++      ->setDisplayConfigurable('view', TRUE)
++      ->setDisplayConfigurable('form', TRUE)
++      ->setRequired(TRUE);
+ 
+     $fields['roles'] = BaseFieldDefinition::create('entity_reference')
+       ->setLabel(t('Roles'))
+       ->setDescription(t('The OG roles related to an OG membership entity.'))
+       ->setCardinality(FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED)
+-      ->setDisplayOptions('view', [
+-        'label' => 'hidden',
+-        'type' => 'entity_reference_label',
++      ->setSetting('target_type', 'og_role')
++      ->setSetting('handler', 'og:og_role')
++      ->setConstraints(['ValidOgRole' => []])
++      ->setDisplayOptions('form', [
++        'type' => 'options_buttons',
+         'weight' => 0,
+       ])
+-      ->setSetting('target_type', 'og_role');
++      ->setDisplayConfigurable('view', TRUE)
++      ->setDisplayConfigurable('form', TRUE);
+ 
+     $fields['created'] = BaseFieldDefinition::create('created')
+       ->setLabel(t('Create'))
+diff --git a/src/Entity/OgMembershipType.php b/src/Entity/OgMembershipType.php
+index 821b2996..acac6fd5 100644
+--- a/src/Entity/OgMembershipType.php
++++ b/src/Entity/OgMembershipType.php
+@@ -3,6 +3,8 @@
+ namespace Drupal\og\Entity;
+ 
+ use Drupal\Core\Config\Entity\ConfigEntityBase;
++use Drupal\field\Entity\FieldConfig;
++use Drupal\og\OgMembershipInterface;
+ use Drupal\og\OgMembershipTypeInterface;
+ 
+ /**
+@@ -20,11 +22,26 @@
+  * @ConfigEntityType(
+  *   id = "og_membership_type",
+  *   label = @Translation("OG membership type"),
++ *   handlers = {
++ *     "access" = "Drupal\Core\Entity\EntityAccessControlHandler",
++ *     "form" = {
++ *       "add" = "Drupal\og\Form\OgMembershipTypeForm",
++ *       "edit" = "Drupal\og\Form\OgMembershipTypeForm",
++ *       "delete" = "Drupal\Core\Entity\EntityDeleteForm"
++ *     },
++ *     "list_builder" = "Drupal\og\OgMembershipTypeListBuilder"
++ *   },
++ *   admin_permission = "administer group",
+  *   config_prefix = "og_membership_type",
+  *   bundle_of = "og_membership",
+  *   entity_keys = {
+  *     "id" = "type",
+  *     "label" = "name"
++ *   },
++ *   links = {
++ *     "edit-form" = "/admin/structure/membership-types/manage/{membership_type}",
++ *     "delete-form" = "/admin/structure/membership-types/manage/{membership_type}/delete",
++ *     "collection" = "/admin/structure/membership-types",
+  *   }
+  * )
+  */
+@@ -42,4 +59,35 @@ public function id() {
+     return $this->type;
+   }
+ 
++  /**
++   * {@inheritdoc}
++   */
++  public function save() {
++    $status = parent::save();
++
++    if ($status === SAVED_NEW) {
++      FieldConfig::create([
++        'field_name' => 'og_membership_request',
++        'entity_type' => 'og_membership',
++        'bundle' => $this->id(),
++        'label' => 'Request Membership',
++        'description' => 'Explain the motivation for your request to join this group.',
++        'translatable' => TRUE,
++        'settings' => [],
++      ])->save();
++    }
++
++    return $status;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function delete() {
++    if ($this->id() === OgMembershipInterface::TYPE_DEFAULT) {
++      throw \Exception("The default OG membership type cannot be deleted.");
++    }
++    parent::delete();
++  }
++
+ }
+diff --git a/src/Event/OgAdminRoutesEvent.php b/src/Event/OgAdminRoutesEvent.php
+index 575ccf90..4ae01217 100644
+--- a/src/Event/OgAdminRoutesEvent.php
++++ b/src/Event/OgAdminRoutesEvent.php
+@@ -2,6 +2,7 @@
+ 
+ namespace Drupal\og\Event;
+ 
++use Drupal\Component\Utility\NestedArray;
+ use Symfony\Component\EventDispatcher\Event;
+ 
+ /**
+@@ -40,8 +41,9 @@ public function getRoutes($entity_type_id) {
+ 
+       $routes_info[$name] = $route_info;
+ 
+-      // Add default values.
+-      $routes_info[$name] += [
++      // Add default values. NestedArray::mergeDeep allows deep data to not be
++      // overwritten with the defaults.
++      $defaults = [
+         'description' => '',
+ 
+         'requirements' => [
+@@ -64,6 +66,8 @@ public function getRoutes($entity_type_id) {
+           '_title' => $route_info['title'],
+         ],
+       ];
++
++      $routes_info[$name] = NestedArray::mergeDeep($defaults, $routes_info[$name]);
+     }
+ 
+     return $routes_info;
+diff --git a/src/EventSubscriber/OgEventSubscriber.php b/src/EventSubscriber/OgEventSubscriber.php
+index 3463cd3f..b0f49589 100644
+--- a/src/EventSubscriber/OgEventSubscriber.php
++++ b/src/EventSubscriber/OgEventSubscriber.php
+@@ -357,12 +357,21 @@ public function provideOgAdminRoutes(OgAdminRoutesEventInterface $event) {
+       'description' => 'Manage members',
+       'path' => 'members',
+       'requirements' => [
+-        '_og_user_access_group' => 'administer group',
++        '_og_user_access_group' => 'administer group|manage members',
+         // Views module must be enabled.
+         '_module_dependencies' => 'views',
+       ],
+     ];
+ 
++    $routes_info['add_membership_page'] = [
++      'controller' => '\Drupal\og\Controller\OgAdminMembersController::addPage',
++      'title' => 'Add member',
++      'path' => 'members/add',
++      'requirements' => [
++        '_og_membership_add_access' => 'TRUE',
++      ],
++    ];
++
+     $event->setRoutesInfo($routes_info);
+   }
+ 
+diff --git a/src/Form/OgMembershipDeleteForm.php b/src/Form/OgMembershipDeleteForm.php
+new file mode 100644
+index 00000000..eaa049d8
+--- /dev/null
++++ b/src/Form/OgMembershipDeleteForm.php
+@@ -0,0 +1,53 @@
++<?php
++
++namespace Drupal\og\Form;
++
++use Drupal\Core\Entity\ContentEntityDeleteForm;
++
++/**
++ * Provides a form for deleting an OG membership.
++ */
++class OgMembershipDeleteForm extends ContentEntityDeleteForm {
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function getDeletionMessage() {
++    /** @var \Drupal\Core\Entity\ContentEntityInterface $entity */
++    $membership = $this->getEntity();
++
++    return $this->t("%user has been unsubscribed from %group.", [
++      '%user' => $membership->getOwner()->getDisplayName(),
++      '%group' => $membership->getGroup()->label(),
++    ]);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function logDeletionMessage() {
++    /** @var \Drupal\og\Entity\OgMembership $entity */
++    $membership = $this->getEntity();
++
++    $this->logger('og')->notice("OG Membership: deleted the @membership_type membership for the user uid: @uid to the group of the entity-type @group_type and ID: @gid", [
++      '@membership_type' => $membership->getType(),
++      '@uid' => $membership->getOwner()->id(),
++      '@group_type' => $membership->getGroupEntityType(),
++      '@gid' => $membership->getGroupId(),
++    ]);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getQuestion() {
++    /** @var \Drupal\og\Entity\OgMembership $entity */
++    $membership = $this->getEntity();
++
++    return $this->t("Are you sure you want to unsubscribe %user from %group?", [
++      '%user' => $membership->getOwner()->getDisplayName(),
++      '%group' => $membership->getGroup()->label(),
++    ]);
++  }
++
++}
+diff --git a/src/Form/OgMembershipForm.php b/src/Form/OgMembershipForm.php
+new file mode 100644
+index 00000000..703a51a4
+--- /dev/null
++++ b/src/Form/OgMembershipForm.php
+@@ -0,0 +1,132 @@
++<?php
++
++namespace Drupal\og\Form;
++
++use Drupal\Component\Datetime\TimeInterface;
++use Drupal\Core\Entity\ContentEntityForm;
++use Drupal\Core\Entity\EntityManagerInterface;
++use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
++use Drupal\Core\Form\FormStateInterface;
++use Drupal\og\OgAccessInterface;
++use Drupal\og\OgMembershipInterface;
++use Symfony\Component\DependencyInjection\ContainerInterface;
++
++/**
++ * Form controller for the group content edit forms.
++ *
++ * @ingroup group
++ */
++class OgMembershipForm extends ContentEntityForm {
++
++  /**
++   * The OG access service.
++   *
++   * @var \Drupal\og\OgAccess
++   */
++  protected $ogAccess;
++
++  /**
++   * Constructs a MessageForm object.
++   *
++   * @param \Drupal\Core\Entity\EntityManagerInterface $entity_manager
++   *   The entity manager.
++   * @param \Drupal\Core\Entity\EntityTypeBundleInfoInterface $entity_type_bundle_info
++   *   The entity type bundle service.
++   * @param \Drupal\Component\Datetime\TimeInterface $time
++   *   The time service.
++   * @param \Drupal\og\OgAccessInterface $og_access
++   *   The OG access service.
++   */
++  public function __construct(EntityManagerInterface $entity_manager, EntityTypeBundleInfoInterface $entity_type_bundle_info = NULL, TimeInterface $time = NULL, OgAccessInterface $og_access) {
++    parent::__construct($entity_manager, $entity_type_bundle_info, $time);
++    $this->ogAccess = $og_access;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container) {
++    return new static(
++      $container->get('entity.manager'),
++      $container->get('entity_type.bundle.info'),
++      $container->get('datetime.time'),
++      $container->get('og.access')
++    );
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function form(array $form, FormStateInterface $form_state) {
++    /** @var \Drupal\og\Entity\OgMembership $entity */
++    $entity = $this->getEntity();
++    /** @var \Drupal\Core\Entity\ContentEntityInterface $group */
++    $group = $entity->getGroup();
++
++    $form = parent::form($form, $form_state);
++    $form['#title'] = $this->t('Add member to %group', ['%group' => $group->label()]);
++    $form['entity_type'] = ['#value' => $entity->getEntityType()->id()];
++    $form['entity_id'] = ['#value' => $group->id()];
++
++    if ($entity->getType() != OgMembershipInterface::TYPE_DEFAULT) {
++      $form['membership_type'] = [
++        '#title' => $this->t('Membership type'),
++        '#type' => 'item',
++        '#plain_text' => $entity->type->entity->label(),
++        '#weight' => -2,
++      ];
++    }
++
++    if ($this->operation == 'edit') {
++      $form['#title'] = $this->t('Edit membership in %group', ['%group' => $group->label()]);
++      $form['uid']['#access'] = FALSE;
++      $form['member'] = [
++        '#title' => $this->t('Member name'),
++        '#type' => 'item',
++        '#markup' => $entity->getOwner()->getDisplayName(),
++        '#weight' => -10,
++      ];
++    }
++
++    // Require the 'manage members' permission to be able to edit roles.
++    $form['roles']['#access'] = $this->ogAccess
++      ->userAccess($group, 'manage members')
++      ->isAllowed();
++
++    return $form;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function save(array $form, FormStateInterface $form_state) {
++    $membership = $this->entity;
++    $insert = $membership->isNew();
++    $membership->save();
++
++    $membership_link = $membership->link($this->t('View'));
++
++    $context = [
++      '@membership_type' => $membership->getType(),
++      '@uid' => $membership->getOwner()->id(),
++      '@group_type' => $membership->getGroupEntityType(),
++      '@gid' => $membership->getGroupId(),
++      'link' => $membership_link,
++    ];
++
++    $t_args = [
++      '%user' => $membership->getOwner()->link(),
++      '%group' => $membership->getGroup()->link(),
++    ];
++
++    if ($insert) {
++      $this->logger('og')->notice('OG Membership: added the @membership_type membership for the use uid @uid to the group of the entity-type @group_type and ID @gid.', $context);
++      drupal_set_message($this->t('Added %user to %group.', $t_args));
++      return;
++    }
++
++    $this->logger('og')->notice('OG Membership: updated the @membership_type membership for the use uid @uid to the group of the entity-type @group_type and ID @gid.', $context);
++    drupal_set_message($this->t('Updated the membership for %user to %group.', $t_args));
++  }
++
++}
+diff --git a/src/Form/OgMembershipTypeForm.php b/src/Form/OgMembershipTypeForm.php
+new file mode 100644
+index 00000000..3a6369d0
+--- /dev/null
++++ b/src/Form/OgMembershipTypeForm.php
+@@ -0,0 +1,126 @@
++<?php
++
++namespace Drupal\og\Form;
++
++use Drupal\Core\Entity\BundleEntityFormBase;
++use Drupal\Core\Entity\EntityManagerInterface;
++use Drupal\Core\Entity\EntityTypeInterface;
++use Drupal\Core\Form\FormStateInterface;
++use Symfony\Component\DependencyInjection\ContainerInterface;
++
++/**
++ * Form handler for OG membership type forms.
++ */
++class OgMembershipTypeForm extends BundleEntityFormBase {
++
++  /**
++   * The entity manager.
++   *
++   * @var \Drupal\Core\Entity\EntityManagerInterface
++   */
++  protected $entityManager;
++
++  /**
++   * Constructs the OgMembershipTypeForm object.
++   *
++   * @param \Drupal\Core\Entity\EntityManagerInterface $entity_manager
++   *   The entity manager.
++   */
++  public function __construct(EntityManagerInterface $entity_manager) {
++    $this->entityManager = $entity_manager;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container) {
++    return new static(
++      $container->get('entity.manager')
++    );
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function form(array $form, FormStateInterface $form_state) {
++    $form = parent::form($form, $form_state);
++
++    $type = $this->entity;
++    if ($this->operation == 'add') {
++      $form['#title'] = $this->t('Add membership type');
++    }
++    else {
++      $form['#title'] = $this->t('Edit %label membership type', ['%label' => $type->label()]);
++    }
++
++    $form['name'] = [
++      '#title' => $this->t('Name'),
++      '#type' => 'textfield',
++      '#default_value' => $type->label(),
++      '#description' => $this->t('The human-readable name of this membership type.'),
++      '#required' => TRUE,
++      '#size' => 30,
++    ];
++
++    $form['type'] = [
++      '#type' => 'machine_name',
++      '#default_value' => $type->id(),
++      '#maxlength' => EntityTypeInterface::BUNDLE_MAX_LENGTH,
++      '#machine_name' => [
++        'exists' => ['Drupal\og\Entity\OgMembershipType', 'load'],
++        'source' => ['name'],
++      ],
++      '#description' => $this->t('A unique machine-readable name for this membership type. It must only contain lowercase letters, numbers, and underscores.'),
++    ];
++    return $this->protectBundleIdElement($form);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function actions(array $form, FormStateInterface $form_state) {
++    $actions = parent::actions($form, $form_state);
++    $actions['submit']['#value'] = $this->t('Save membership type');
++    $actions['delete']['#value'] = $this->t('Delete membership type');
++    return $actions;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function validateForm(array &$form, FormStateInterface $form_state) {
++    parent::validateForm($form, $form_state);
++
++    $id = trim($form_state->getValue('type'));
++    // '0' is invalid, since elsewhere we check it using empty().
++    if ($id == '0') {
++      $form_state->setErrorByName('type', $this->t("Invalid machine-readable name. Enter a name other than %invalid.", ['%invalid' => $id]));
++    }
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function save(array $form, FormStateInterface $form_state) {
++    $type = $this->entity;
++    $type->set('type', trim($type->id()));
++    $type->set('name', trim($type->label()));
++
++    $status = $type->save();
++
++    $t_args = ['%name' => $type->label()];
++
++    if ($status == SAVED_UPDATED) {
++      drupal_set_message($this->t('The membership type %name has been updated.', $t_args));
++    }
++    elseif ($status == SAVED_NEW) {
++      drupal_set_message($this->t('The membership type %name has been added.', $t_args));
++      $context = array_merge($t_args, ['link' => $type->link($this->t('View'), 'collection')]);
++      $this->logger('og')->notice('Added membership type %name.', $context);
++    }
++
++    $this->entityManager->clearCachedFieldDefinitions();
++    $form_state->setRedirectUrl($type->urlInfo('collection'));
++  }
++
++}
+diff --git a/src/GroupTypeManager.php b/src/GroupTypeManager.php
+index 9ae73092..6090e2b7 100644
+--- a/src/GroupTypeManager.php
++++ b/src/GroupTypeManager.php
+@@ -14,7 +14,7 @@
+ /**
+  * A manager to keep track of which entity type/bundles are OG group enabled.
+  */
+-class GroupTypeManager {
++class GroupTypeManager implements GroupTypeManagerInterface {
+ 
+   /**
+    * The key used to identify the cached version of the group relation map.
+@@ -173,15 +173,7 @@ public function __construct(ConfigFactoryInterface $config_factory, EntityTypeMa
+   }
+ 
+   /**
+-   * Determines whether an entity type ID and bundle ID are group enabled.
+-   *
+-   * @param string $entity_type_id
+-   *   The entity type name.
+-   * @param string $bundle
+-   *   The bundle name.
+-   *
+-   * @return bool
+-   *   TRUE if a bundle is a group.
++   * {@inheritdoc}
+    */
+   public function isGroup($entity_type_id, $bundle) {
+     $group_map = $this->getGroupMap();
+@@ -189,31 +181,14 @@ public function isGroup($entity_type_id, $bundle) {
+   }
+ 
+   /**
+-   * Checks if the given entity bundle is group content.
+-   *
+-   * This is provided as a convenient sister method to ::isGroup(). It is a
+-   * simple wrapper for OgGroupAudienceHelperInterface::hasGroupAudienceField().
+-   *
+-   * @param string $entity_type_id
+-   *   The entity type ID.
+-   * @param string $bundle
+-   *   The bundle name.
+-   *
+-   * @return bool
+-   *   TRUE if the entity bundle is group content.
++   * {@inheritdoc}
+    */
+   public function isGroupContent($entity_type_id, $bundle) {
+     return $this->groupAudienceHelper->hasGroupAudienceField($entity_type_id, $bundle);
+   }
+ 
+   /**
+-   * Returns the group of an entity type.
+-   *
+-   * @param string $entity_type_id
+-   *   The entity type name.
+-   *
+-   * @return \Drupal\Core\Entity\EntityInterface[]
+-   *   Array of groups, or an empty array if none found
++   * {@inheritdoc}
+    */
+   public function getGroupsForEntityType($entity_type_id) {
+     $group_map = $this->getGroupMap();
+@@ -221,11 +196,7 @@ public function getGroupsForEntityType($entity_type_id) {
+   }
+ 
+   /**
+-   * Get all group bundles keyed by entity type.
+-   *
+-   * @return array
+-   *   An associative array, keyed by entity type, each value an indexed array
+-   *   of bundle IDs.
++   * {@inheritdoc}
+    */
+   public function getAllGroupBundles($entity_type = NULL) {
+     $group_map = $this->getGroupMap();
+@@ -233,17 +204,7 @@ public function getAllGroupBundles($entity_type = NULL) {
+   }
+ 
+   /**
+-   * Returns a list of all group content bundles keyed by entity type.
+-   *
+-   * This will return a simple list of group content bundles. If you need
+-   * information about the relations between groups and group content bundles
+-   * then use getGroupRelationMap() instead.
+-   *
+-   * @return array
+-   *   An associative array of group content bundle IDs, keyed by entity type
+-   *   ID.
+-   *
+-   * @see \Drupal\og\GroupTypeManager::getGroupRelationMap()
++   * {@inheritdoc}
+    */
+   public function getAllGroupContentBundles() {
+     $bundles = [];
+@@ -258,23 +219,7 @@ public function getAllGroupContentBundles() {
+   }
+ 
+   /**
+-   * Returns a list of all group content bundles filtered by entity type.
+-   *
+-   * This will return a simple list of group content bundles. If you need
+-   * information about the relations between groups and group content bundles
+-   * then use getGroupRelationMap() instead.
+-   *
+-   * @param string $entity_type_id
+-   *   Entity type ID to filter the bundles by.
+-   *
+-   * @return array
+-   *   An array of group content bundle IDs.
+-   *
+-   * @throws \InvalidArgumentException
+-   *   Thrown when the passed in entity type ID does not have any group content
+-   *   bundles defined.
+-   *
+-   * @see \Drupal\og\GroupTypeManager::getGroupRelationMap()
++   * {@inheritdoc}
+    */
+   public function getAllGroupContentBundlesByEntityType($entity_type_id) {
+     $bundles = $this->getAllGroupContentBundles();
+@@ -285,17 +230,7 @@ public function getAllGroupContentBundlesByEntityType($entity_type_id) {
+   }
+ 
+   /**
+-   * Returns all group bundles that are referenced by the given group content.
+-   *
+-   * @param string $group_content_entity_type_id
+-   *   The entity type ID of the group content type for which to return
+-   *   associated group bundle IDs.
+-   * @param string $group_content_bundle_id
+-   *   The bundle ID of the group content type for which to return associated
+-   *   group bundle IDs.
+-   *
+-   * @return array
+-   *   An array of group bundle IDs, keyed by group entity type ID.
++   * {@inheritdoc}
+    */
+   public function getGroupBundleIdsByGroupContentBundle($group_content_entity_type_id, $group_content_bundle_id) {
+     $bundles = [];
+@@ -320,18 +255,7 @@ public function getGroupBundleIdsByGroupContentBundle($group_content_entity_type
+   }
+ 
+   /**
+-   * Returns group content bundles that are referencing the given group content.
+-   *
+-   * @param string $group_entity_type_id
+-   *   The entity type ID of the group type for which to return associated group
+-   *   content bundle IDs.
+-   * @param string $group_bundle_id
+-   *   The bundle ID of the group type for which to return associated group
+-   *   content bundle IDs.
+-   *
+-   * @return array
+-   *   An array of group content bundle IDs, keyed by group content entity type
+-   *   ID.
++   * {@inheritdoc}
+    */
+   public function getGroupContentBundleIdsByGroupBundle($group_entity_type_id, $group_bundle_id) {
+     $group_relation_map = $this->getGroupRelationMap();
+@@ -339,15 +263,7 @@ public function getGroupContentBundleIdsByGroupBundle($group_entity_type_id, $gr
+   }
+ 
+   /**
+-   * Declares a bundle of an entity type as being an OG group.
+-   *
+-   * @param string $entity_type_id
+-   *   The entity type ID of the bundle to declare as being a group.
+-   * @param string $bundle_id
+-   *   The bundle ID of the bundle to declare as being a group.
+-   *
+-   * @throws \InvalidArgumentException
+-   *   Thrown when the given bundle is already a group.
++   * {@inheritdoc}
+    */
+   public function addGroup($entity_type_id, $bundle_id) {
+     // Throw an error if the entity type is already defined as a group.
+@@ -376,7 +292,7 @@ public function addGroup($entity_type_id, $bundle_id) {
+   }
+ 
+   /**
+-   * Removes an entity type instance as being an OG group.
++   * {@inheritdoc}
+    */
+   public function removeGroup($entity_type_id, $bundle_id) {
+     $editable = $this->configFactory->getEditable('og.settings');
+@@ -404,7 +320,48 @@ public function removeGroup($entity_type_id, $bundle_id) {
+   }
+ 
+   /**
+-   * Resets all locally stored data.
++   * {@inheritdoc}
++   */
++  public function getGroupMembershipType($entity_type_id, $bundle_id) {
++    $editable = $this->configFactory->getEditable('og.settings');
++    $group_membership_types = $editable->get('group_membership_types');
++
++    if (isset($group_membership_types["$entity_type_id:$bundle_id"])) {
++      return $group_membership_types["$entity_type_id:$bundle_id"];
++    }
++    else {
++      return OgMembershipInterface::TYPE_DEFAULT;
++    }
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function setGroupMembershipType($entity_type_id, $bundle_id, $membership_type_id) {
++    $editable = $this->configFactory->getEditable('og.settings');
++    $group_membership_types = $editable->get('group_membership_types');
++
++    $group_membership_types["$entity_type_id:$bundle_id"] = $membership_type_id;
++
++    $editable->set('group_membership_types', $group_membership_types);
++    $editable->save();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function removeGroupMembershipType($entity_type_id, $bundle_id) {
++    $editable = $this->configFactory->getEditable('og.settings');
++    $group_membership_types = $editable->get('group_membership_types');
++
++    unset($group_membership_types["$entity_type_id:$bundle_id"]);
++
++    $editable->set('group_membership_types', $group_membership_types);
++    $editable->save();
++  }
++
++  /**
++   * {@inheritdoc}
+    */
+   public function reset() {
+     $this->resetGroupMap();
+@@ -412,19 +369,14 @@ public function reset() {
+   }
+ 
+   /**
+-   * Resets the cached group map.
+-   *
+-   * Call this after adding or removing a group type.
++   * {@inheritdoc}
+    */
+   public function resetGroupMap() {
+     $this->groupMap = [];
+   }
+ 
+   /**
+-   * Resets the cached group relation map.
+-   *
+-   * Call this after making a change to the relationship between a group type
+-   * and a group content type.
++   * {@inheritdoc}
+    */
+   public function resetGroupRelationMap() {
+     $this->groupRelationMap = [];
+@@ -432,10 +384,7 @@ public function resetGroupRelationMap() {
+   }
+ 
+   /**
+-   * Returns the group map.
+-   *
+-   * @return array
+-   *   The group map.
++   * {@inheritdoc}
+    */
+   public function getGroupMap() {
+     if (empty($this->groupMap)) {
+diff --git a/src/GroupTypeManagerInterface.php b/src/GroupTypeManagerInterface.php
+new file mode 100644
+index 00000000..01cab3c8
+--- /dev/null
++++ b/src/GroupTypeManagerInterface.php
+@@ -0,0 +1,209 @@
++<?php
++
++namespace Drupal\og;
++
++/**
++ * Group type manager interface.
++ */
++interface GroupTypeManagerInterface {
++
++  /**
++   * Determines whether an entity type ID and bundle ID are group enabled.
++   *
++   * @param string $entity_type_id
++   *   The entity type name.
++   * @param string $bundle
++   *   The bundle name.
++   *
++   * @return bool
++   *   TRUE if a bundle is a group.
++   */
++  public function isGroup($entity_type_id, $bundle);
++
++  /**
++   * Checks if the given entity bundle is group content.
++   *
++   * This is provided as a convenient sister method to ::isGroup(). It is a
++   * simple wrapper for OgGroupAudienceHelperInterface::hasGroupAudienceField().
++   *
++   * @param string $entity_type_id
++   *   The entity type ID.
++   * @param string $bundle
++   *   The bundle name.
++   *
++   * @return bool
++   *   TRUE if the entity bundle is group content.
++   */
++  public function isGroupContent($entity_type_id, $bundle);
++
++  /**
++   * Returns the group of an entity type.
++   *
++   * @param string $entity_type_id
++   *   The entity type name.
++   *
++   * @return \Drupal\Core\Entity\EntityInterface[]
++   *   Array of groups, or an empty array if none found
++   */
++  public function getGroupsForEntityType($entity_type_id);
++
++  /**
++   * Get all group bundles keyed by entity type.
++   *
++   * @return array
++   *   An associative array, keyed by entity type, each value an indexed array
++   *   of bundle IDs.
++   */
++  public function getAllGroupBundles($entity_type = NULL);
++
++  /**
++   * Returns a list of all group content bundles keyed by entity type.
++   *
++   * This will return a simple list of group content bundles. If you need
++   * information about the relations between groups and group content bundles
++   * then use getGroupRelationMap() instead.
++   *
++   * @return array
++   *   An associative array of group content bundle IDs, keyed by entity type
++   *   ID.
++   *
++   * @see \Drupal\og\GroupTypeManager::getGroupRelationMap()
++   */
++  public function getAllGroupContentBundles();
++
++  /**
++   * Returns a list of all group content bundles filtered by entity type.
++   *
++   * This will return a simple list of group content bundles. If you need
++   * information about the relations between groups and group content bundles
++   * then use getGroupRelationMap() instead.
++   *
++   * @param string $entity_type_id
++   *   Entity type ID to filter the bundles by.
++   *
++   * @return array
++   *   An array of group content bundle IDs.
++   *
++   * @throws \InvalidArgumentException
++   *   Thrown when the passed in entity type ID does not have any group content
++   *   bundles defined.
++   *
++   * @see \Drupal\og\GroupTypeManager::getGroupRelationMap()
++   */
++  public function getAllGroupContentBundlesByEntityType($entity_type_id);
++
++  /**
++   * Returns all group bundles that are referenced by the given group content.
++   *
++   * @param string $group_content_entity_type_id
++   *   The entity type ID of the group content type for which to return
++   *   associated group bundle IDs.
++   * @param string $group_content_bundle_id
++   *   The bundle ID of the group content type for which to return associated
++   *   group bundle IDs.
++   *
++   * @return array
++   *   An array of group bundle IDs, keyed by group entity type ID.
++   */
++  public function getGroupBundleIdsByGroupContentBundle($group_content_entity_type_id, $group_content_bundle_id);
++
++  /**
++   * Returns group content bundles that are referencing the given group content.
++   *
++   * @param string $group_entity_type_id
++   *   The entity type ID of the group type for which to return associated group
++   *   content bundle IDs.
++   * @param string $group_bundle_id
++   *   The bundle ID of the group type for which to return associated group
++   *   content bundle IDs.
++   *
++   * @return array
++   *   An array of group content bundle IDs, keyed by group content entity type
++   *   ID.
++   */
++  public function getGroupContentBundleIdsByGroupBundle($group_entity_type_id, $group_bundle_id);
++
++  /**
++   * Declares a bundle of an entity type as being an OG group.
++   *
++   * @param string $entity_type_id
++   *   The entity type ID of the bundle to declare as being a group.
++   * @param string $bundle_id
++   *   The bundle ID of the bundle to declare as being a group.
++   *
++   * @throws \InvalidArgumentException
++   *   Thrown when the given bundle is already a group.
++   */
++  public function addGroup($entity_type_id, $bundle_id);
++
++  /**
++   * Removes an entity type instance as being an OG group.
++   */
++  public function removeGroup($entity_type_id, $bundle_id);
++
++  /**
++   * Get the membership type to use for a group.
++   *
++   * If there is no setting for this, falls back to 'default'.
++   *
++   * @param string $entity_type_id
++   *   The entity type ID for the group.
++   * @param string $bundle_id
++   *   The bundle ID for the group.
++   *
++   * @return string
++   *   The membership type ID to use for this group type.
++   */
++  public function getGroupMembershipType($entity_type_id, $bundle_id);
++
++  /**
++   * Set the membership type for a group type.
++   *
++   * @param string $entity_type_id
++   *   The entity type ID for the group.
++   * @param string $bundle_id
++   *   The bundle ID for the group.
++   * @param string $membership_type_id
++   *   The membership type ID to use for this group type.
++   */
++  public function setGroupMembershipType($entity_type_id, $bundle_id, $membership_type_id);
++
++  /**
++   * Clear the membership type setting for a group type.
++   *
++   * @param string $entity_type_id
++   *   The entity type ID for the group.
++   * @param string $bundle_id
++   *   The bundle ID for the group.
++   */
++  public function removeGroupMembershipType($entity_type_id, $bundle_id);
++
++  /**
++   * Resets all locally stored data.
++   */
++  public function reset();
++
++  /**
++   * Resets the cached group map.
++   *
++   * Call this after adding or removing a group type.
++   */
++  public function resetGroupMap();
++
++  /**
++   * Resets the cached group relation map.
++   *
++   * Call this after making a change to the relationship between a group type
++   * and a group content type.
++   */
++  public function resetGroupRelationMap();
++
++  /**
++   * Returns the group map.
++   *
++   * @return array
++   *   The group map.
++   */
++  public function getGroupMap();
++
++}
+diff --git a/src/MembershipManager.php b/src/MembershipManager.php
+index fa0c1fa3..39395db3 100644
+--- a/src/MembershipManager.php
++++ b/src/MembershipManager.php
+@@ -29,6 +29,13 @@ class MembershipManager implements MembershipManagerInterface {
+    */
+   protected $entityTypeManager;
+ 
++  /**
++   * The group manager.
++   *
++   * @var \Drupal\og\GroupTypeManager
++   */
++  protected $groupTypeManager;
++
+   /**
+    * The OG group audience helper.
+    *
+@@ -41,11 +48,14 @@ class MembershipManager implements MembershipManagerInterface {
+    *
+    * @param \Drupal\core\Entity\EntityTypeManagerInterface $entity_type_manager
+    *   The entity type manager.
++   * @param \Drupal\og\GroupTypeManagerInterface $group_manager
++   *   The group manager.
+    * @param \Drupal\og\OgGroupAudienceHelperInterface $group_audience_helper
+    *   The OG group audience helper.
+    */
+-  public function __construct(EntityTypeManagerInterface $entity_type_manager, OgGroupAudienceHelperInterface $group_audience_helper) {
++  public function __construct(EntityTypeManagerInterface $entity_type_manager, GroupTypeManagerInterface $group_manager, OgGroupAudienceHelperInterface $group_audience_helper) {
+     $this->entityTypeManager = $entity_type_manager;
++    $this->groupTypeManager = $group_manager;
+     $this->groupAudienceHelper = $group_audience_helper;
+   }
+ 
+@@ -131,10 +141,53 @@ public function getMembership(EntityInterface $group, AccountInterface $user, ar
+     return NULL;
+   }
+ 
++    /**
++     * {@inheritdoc}
++     */
++  public function getGroupMemberships(EntityInterface $group, array $states = [OgMembershipInterface::STATE_ACTIVE]) {
++    // Get a string identifier of the states, so we can retrieve it from cache.
++    sort($states);
++    $states_identifier = implode('|', array_unique($states));
++
++    $identifier = [
++      __METHOD__,
++      $group->id(),
++      $states_identifier,
++    ];
++    $identifier = implode(':', $identifier);
++
++    // Return cached result if it exists.
++    if (isset($this->cache[$identifier])) {
++      return $this->cache[$identifier];
++    }
++
++    $query = $this->entityTypeManager
++      ->getStorage('og_membership')
++      ->getQuery()
++      ->condition('entity_id', $group->id());
++
++    if ($states) {
++      $query->condition('state', $states, 'IN');
++    }
++
++    $results = $query->execute();
++
++    /** @var \Drupal\og\Entity\OgMembership[] $memberships */
++    $this->cache[$identifier] = $this->entityTypeManager
++      ->getStorage('og_membership')
++      ->loadMultiple($results);
++
++    return $this->cache[$identifier];
++  }
++
+   /**
+    * {@inheritdoc}
+    */
+-  public function createMembership(EntityInterface $group, AccountInterface $user, $membership_type = OgMembershipInterface::TYPE_DEFAULT) {
++  public function createMembership(EntityInterface $group, AccountInterface $user, $membership_type = NULL) {
++    if (empty($membership_type)) {
++      $membership_type = $this->groupTypeManager->getGroupMembershipType($group->getEntityTypeId(), $group->bundle());
++    }
++
+     /** @var \Drupal\user\UserInterface|\Drupal\Core\Session\AccountInterface $user */
+     /** @var \Drupal\og\OgMembershipInterface $membership */
+     $membership = OgMembership::create(['type' => $membership_type]);
+diff --git a/src/MembershipManagerInterface.php b/src/MembershipManagerInterface.php
+index d117645b..f67db62e 100644
+--- a/src/MembershipManagerInterface.php
++++ b/src/MembershipManagerInterface.php
+@@ -68,6 +68,19 @@ public function getUserGroups(AccountInterface $user, array $states = [OgMembers
+    */
+   public function getMemberships(AccountInterface $user, array $states = [OgMembershipInterface::STATE_ACTIVE]);
+ 
++  /**
++   * Returns the group memberships for a given group.
++   *
++   * @param \Drupal\Core\Entity\EntityInterface $group
++   *   The group to get the membership for.
++   * @param array $states
++   *   (optional) Array with the state to return. Defaults to active.
++   *
++   * @return \Drupal\og\OgMembershipInterface[]
++   *   An array of OgMembership entities, keyed by ID.
++   */
++  public function getGroupMemberships(EntityInterface $group, array $states = [OgMembershipInterface::STATE_ACTIVE]);
++
+   /**
+    * Returns the group membership for a given user and group.
+    *
+@@ -92,12 +105,13 @@ public function getMembership(EntityInterface $group, AccountInterface $user, ar
+    * @param \Drupal\Core\Session\AccountInterface $user
+    *   The user object.
+    * @param string $membership_type
+-   *   (optional) The membership type. Defaults to OG_MEMBERSHIP_TYPE_DEFAULT.
++   *   (optional) The membership type. Defaults to the type set for the group
++   *   type.
+    *
+    * @return \Drupal\og\OgMembershipInterface
+    *   The unsaved membership object.
+    */
+-  public function createMembership(EntityInterface $group, AccountInterface $user, $membership_type = OgMembershipInterface::TYPE_DEFAULT);
++  public function createMembership(EntityInterface $group, AccountInterface $user, $membership_type = NULL);
+ 
+   /**
+    * Returns all group IDs associated with the given group content entity.
+diff --git a/src/Og.php b/src/Og.php
+index a7017242..745d163f 100644
+--- a/src/Og.php
++++ b/src/Og.php
+@@ -164,6 +164,23 @@ public static function getMembership(EntityInterface $group, AccountInterface $u
+     return $membership_manager->getMembership($group, $user, $states);
+   }
+ 
++  /**
++   * Returns the group memberships for a given group.
++   *
++   * @param \Drupal\Core\Entity\EntityInterface $group
++   *   The group to get the membership for.
++   * @param array $states
++   *   (optional) Array with the state to return. Defaults to active.
++   *
++   * @return \Drupal\og\OgMembershipInterface[]
++   *   An array of OgMembership entities, keyed by ID.
++   */
++  public static function getGroupMemberships(EntityInterface $group, array $states = [OgMembershipInterface::STATE_ACTIVE]) {
++    /** @var \Drupal\og\MembershipManagerInterface $membership_manager */
++    $membership_manager = \Drupal::service('og.membership_manager');
++    return $membership_manager->getGroupMemberships($group, $states);
++  }
++
+   /**
+    * Creates an OG membership.
+    *
+@@ -172,12 +189,13 @@ public static function getMembership(EntityInterface $group, AccountInterface $u
+    * @param \Drupal\Core\Session\AccountInterface $user
+    *   The user object.
+    * @param string $membership_type
+-   *   (optional) The membership type. Defaults to OG_MEMBERSHIP_TYPE_DEFAULT.
++   *   (optional) The membership type. Defaults to the type set for the group
++   *   type.
+    *
+    * @return \Drupal\og\Entity\OgMembership
+    *   The unsaved membership object.
+    */
+-  public static function createMembership(EntityInterface $group, AccountInterface $user, $membership_type = OgMembershipInterface::TYPE_DEFAULT) {
++  public static function createMembership(EntityInterface $group, AccountInterface $user, $membership_type = NULL) {
+     /** @var \Drupal\og\MembershipManagerInterface $membership_manager */
+     $membership_manager = \Drupal::service('og.membership_manager');
+     return $membership_manager->createMembership($group, $user, $membership_type);
+diff --git a/src/OgMembershipAccessControlHandler.php b/src/OgMembershipAccessControlHandler.php
+new file mode 100644
+index 00000000..d9b352dc
+--- /dev/null
++++ b/src/OgMembershipAccessControlHandler.php
+@@ -0,0 +1,155 @@
++<?php
++
++namespace Drupal\og;
++
++use Drupal\Core\Access\AccessResult;
++use Drupal\Core\Entity\EntityAccessControlHandler;
++use Drupal\Core\Entity\EntityHandlerInterface;
++use Drupal\Core\Entity\EntityInterface;
++use Drupal\Core\Entity\EntityTypeInterface;
++use Drupal\Core\Language\LanguageInterface;
++use Drupal\Core\Session\AccountInterface;
++use Symfony\Component\DependencyInjection\ContainerInterface;
++
++/**
++ * Defines the OG membershipimplementation for entity access control handler.
++ */
++class OgMembershipAccessControlHandler extends EntityAccessControlHandler implements EntityHandlerInterface {
++
++  /**
++   * The OG access service.
++   *
++   * @var \Drupal\og\OgAccess
++   */
++  protected $ogAccess;
++
++  /**
++   * Constructs a OgMembershipAccessControllHandler object.
++   *
++   * @param \Drupal\Core\Entity\EntityTypeInterface $entity_type
++   *   The entity type definition.
++   * @param \Drupal\og\OgAccessInterface $og_access
++   *   The OG access service.
++   */
++  public function __construct(EntityTypeInterface $entity_type, OgAccessInterface $og_access) {
++    $this->entityTypeId = $entity_type->id();
++    $this->entityType = $entity_type;
++    $this->ogAccess = $og_access;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function createInstance(ContainerInterface $container, EntityTypeInterface $entity_type) {
++    return new static(
++      $entity_type,
++      $container->get('og.access')
++    );
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function checkAccess(EntityInterface $entity, $operation, AccountInterface $account) {
++    $group = $entity->getGroup();
++
++    // Do not allow deleting the group owner's membership.
++    if (($operation === 'delete') && ($group instanceof EntityOwnerInterface) && ($group->getOwnerId() == $entity->getOwner()->id())) {
++      return AccessResult::forbidden();
++    }
++
++    // If the user has permission to administer all groups, allow access.
++    if ($account->hasPermission('administer group')) {
++      return AccessResult::allowed();
++    }
++
++    $permissions = [OgAccess::ADMINISTER_GROUP_PERMISSION, 'manager members'];
++    foreach ($permissions as $permission) {
++      $result = $this->ogAccess->userAccess($group, $permission, $account);
++      if ($result->isAllowed()) {
++        return $result;
++      }
++    }
++
++    return AccessResult::neutral();
++
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function createAccess($entity_bundle = NULL, AccountInterface $account = NULL, array $context = [], $return_as_object = FALSE) {
++    $account = $this->prepareUser($account);
++    $context += [
++      'entity_type_id' => $this->entityTypeId,
++      'langcode' => LanguageInterface::LANGCODE_DEFAULT,
++    ];
++
++    $cid = 'create:' . $context['group']->getEntityTypeId() . ':' . $context['group']->id();
++    if ($entity_bundle) {
++      $cid .= ':' . $entity_bundle;
++    }
++
++    if (($access = $this->getCache($cid, 'create', $context['langcode'], $account)) !== NULL) {
++      // Cache hit, no work necessary.
++      return $return_as_object ? $access : $access->isAllowed();
++    }
++
++    // Invoke hook_entity_create_access() and hook_ENTITY_TYPE_create_access().
++    // Hook results take precedence over overridden implementations of
++    // EntityAccessControlHandler::checkCreateAccess(). Entities that have
++    // checks that need to be done before the hook is invoked should do so by
++    // overriding this method.
++    // We grant access to the entity if both of these conditions are met:
++    // - No modules say to deny access.
++    // - At least one module says to grant access.
++    $args = [$account, $context, $entity_bundle];
++    $access = array_merge(
++      $this->moduleHandler()->invokeAll('entity_create_access', $args),
++      $this->moduleHandler()->invokeAll($this->entityTypeId . '_create_access', $args)
++    );
++
++    $return = $this->processAccessHookResults($access);
++
++    // Also execute the default access check except when the access result is
++    // already forbidden, as in that case, it can not be anything else.
++    if (!$return->isForbidden()) {
++      $return = $return->orIf($this->checkCreateAccess($account, $context, $entity_bundle));
++    }
++    $result = $this->setCache($return, $cid, 'create', $context['langcode'], $account);
++    return $return_as_object ? $result : $result->isAllowed();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function checkCreateAccess(AccountInterface $account, array $context, $entity_bundle = NULL) {
++    // If the user has permission to administer all groups, allow access.
++    if ($account->hasPermission('administer group')) {
++      return AccessResult::allowed();
++    }
++
++    $group = $context['group'];
++
++    // If we don't have a group, we can't really determine access other than
++    // checking global account permissions.
++    if ($group === NULL) {
++      return AccessResult::neutral();
++    }
++
++    $permissions = [
++      OgAccess::ADMINISTER_GROUP_PERMISSION,
++      'add user',
++      'manager members',
++    ];
++    foreach ($permissions as $permission) {
++      $result = $this->ogAccess->userAccess($group, $permission, $account);
++      if ($result->isAllowed()) {
++        return $result;
++      }
++    }
++
++    return AccessResult::neutral();
++  }
++
++}
+diff --git a/src/OgMembershipTypeListBuilder.php b/src/OgMembershipTypeListBuilder.php
+new file mode 100644
+index 00000000..47f992ab
+--- /dev/null
++++ b/src/OgMembershipTypeListBuilder.php
+@@ -0,0 +1,47 @@
++<?php
++
++namespace Drupal\og;
++
++use Drupal\Core\Config\Entity\ConfigEntityListBuilder;
++use Drupal\Core\Entity\EntityInterface;
++
++/**
++ * Defines a class to build a listing of membership type entities.
++ *
++ * @see \Drupal\og\Entity\OgMembershipType
++ */
++class OgMembershipTypeListBuilder extends ConfigEntityListBuilder {
++
++  /**
++   * {@inheritdoc}
++   */
++  public function buildHeader() {
++    $header['title'] = t('Name');
++    return $header + parent::buildHeader();
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function buildRow(EntityInterface $entity) {
++    $row['title'] = [
++      'data' => $entity->label(),
++      'class' => ['menu-label'],
++    ];
++    return $row + parent::buildRow($entity);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getDefaultOperations(EntityInterface $entity) {
++    $operations = parent::getDefaultOperations($entity);
++    // Place the edit operation after the operations added by field_ui.module
++    // which have the weights 15, 20, 25.
++    if (isset($operations['edit'])) {
++      $operations['edit']['weight'] = 30;
++    }
++    return $operations;
++  }
++
++}
+diff --git a/src/Plugin/Derivative/OgActionLink.php b/src/Plugin/Derivative/OgActionLink.php
+new file mode 100644
+index 00000000..cd2ca2f7
+--- /dev/null
++++ b/src/Plugin/Derivative/OgActionLink.php
+@@ -0,0 +1,84 @@
++<?php
++
++namespace Drupal\og\Plugin\Derivative;
++
++use Drupal\Component\Plugin\Derivative\DeriverBase;
++use Drupal\Core\Plugin\Discovery\ContainerDeriverInterface;
++use Drupal\Core\Routing\RouteProvider;
++use Drupal\Core\StringTranslation\StringTranslationTrait;
++use Drupal\og\GroupTypeManager;
++use Symfony\Component\DependencyInjection\ContainerInterface;
++
++/**
++ * Provides action link definitions for all entity bundles.
++ */
++class OgActionLink extends DeriverBase implements ContainerDeriverInterface {
++
++  use StringTranslationTrait;
++
++  /**
++   * The group type manager.
++   *
++   * @var \Drupal\og\GroupTypeManager
++   */
++  protected $groupTypeManager;
++
++  /**
++   * Route provider object.
++   *
++   * @var \Drupal\Core\Routing\RouteProvider
++   */
++  protected $routeProvider;
++
++  /**
++   * Creates an OgLocalTask object.
++   *
++   * @param \Drupal\og\GroupTypeManager $group_type_manager
++   *   The group type manager.
++   * @param \Drupal\Core\Routing\RouteProvider $route_provider
++   *   The route provider services.
++   */
++  public function __construct(GroupTypeManager $group_type_manager, RouteProvider $route_provider) {
++    $this->groupTypeManager = $group_type_manager;
++    $this->routeProvider = $route_provider;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container, $base_plugin_id) {
++    return new static(
++      $container->get('og.group_type_manager'),
++      $container->get('router.route_provider')
++    );
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function getDerivativeDefinitions($base_plugin_definition) {
++    $derivatives = [];
++
++    foreach (array_keys($this->groupTypeManager->getGroupMap()) as $entity_type_id) {
++      $route_name = "entity.$entity_type_id.og_admin_routes.add_membership_page";
++
++      if (!$this->routeProvider->getRoutesByNames([$route_name])) {
++        // Route not found.
++        continue;
++      }
++
++      $derivatives["og_membership.$entity_type_id.add"] = [
++        'route_name' => $route_name,
++        'title' => $this->t('Add a member'),
++        'appears_on' => ["entity.$entity_type_id.og_admin_routes.members"],
++      ];
++    }
++
++    foreach ($derivatives as &$entry) {
++      $entry += $base_plugin_definition;
++    }
++
++    return $derivatives;
++  }
++
++}
+diff --git a/src/Plugin/EntityReferenceSelection/OgRoleSelection.php b/src/Plugin/EntityReferenceSelection/OgRoleSelection.php
+new file mode 100644
+index 00000000..c6f2a52f
+--- /dev/null
++++ b/src/Plugin/EntityReferenceSelection/OgRoleSelection.php
+@@ -0,0 +1,64 @@
++<?php
++
++namespace Drupal\og\Plugin\EntityReferenceSelection;
++
++use Drupal\Core\Entity\Plugin\EntityReferenceSelection\DefaultSelection;
++
++/**
++ * Provide default OG Role selection handler.
++ *
++ * @EntityReferenceSelection(
++ *   id = "og:og_role",
++ *   label = @Translation("OG Role selection"),
++ *   group = "og",
++ *   weight = 0
++ * )
++ */
++class OgRoleSelection extends DefaultSelection {
++
++  /**
++   * Get the selection handler of the field.
++   *
++   * @return Drupal\Core\Entity\Plugin\EntityReferenceSelection\DefaultSelection
++   *   Returns the selection handler.
++   */
++  public function getSelectionHandler() {
++    $options = [
++      'target_type' => 'og_role',
++    ];
++    return \Drupal::service('plugin.manager.entity_reference_selection')->getInstance($options);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function buildEntityQuery($match = NULL, $match_operator = 'CONTAINS') {
++    $query = parent::buildEntityQuery($match, $match_operator);
++
++    // @todo implement an easier, more consistent way to get the group type. At
++    // the moment, this works either for checkboxes or OG Autocomplete widget
++    // types on entities that have a getGroup() method. It also does not work
++    // properly every time; for example during validation.
++    $group = NULL;
++    if (isset($this->configuration['entity'])) {
++      $entity = $this->configuration['entity'];
++      $group = is_callable([$entity, 'getGroup']) ? $entity->getGroup() : NULL;
++    }
++
++    if (isset($this->configuration['handler_settings']['group'])) {
++      $group = $this->configuration['handler_settings']['group'];
++    }
++
++    if ($group === NULL) {
++      return $query;
++    }
++
++    $query->condition('group_type', $group->getEntityTypeId(), '=');
++    $query->condition('group_bundle', $group->bundle(), '=');
++    $query->condition($query->orConditionGroup()
++      ->condition('role_type', NULL, 'IS NULL')
++      ->condition('role_type', 'required', '<>'));
++    return $query;
++  }
++
++}
+diff --git a/src/Plugin/EntityReferenceSelection/OgUserSelection.php b/src/Plugin/EntityReferenceSelection/OgUserSelection.php
+new file mode 100644
+index 00000000..47d23ead
+--- /dev/null
++++ b/src/Plugin/EntityReferenceSelection/OgUserSelection.php
+@@ -0,0 +1,188 @@
++<?php
++
++namespace Drupal\og\Plugin\EntityReferenceSelection;
++
++use Drupal\Core\Database\Connection;
++use Drupal\Core\Entity\EntityManagerInterface;
++use Drupal\Core\Entity\Plugin\EntityReferenceSelection\DefaultSelection;
++use Drupal\Core\Extension\ModuleHandlerInterface;
++use Drupal\Core\Session\AccountInterface;
++use Drupal\og\MembershipManagerInterface;
++use Symfony\Component\DependencyInjection\ContainerInterface;
++
++/**
++ * Provide OG User selection handler for memberships.
++ *
++ * @EntityReferenceSelection(
++ *   id = "og:user",
++ *   label = @Translation("OG Membership user selection"),
++ *   group = "og",
++ *   entity_types = {"user"},
++ *   weight = 0
++ * )
++ */
++class OgUserSelection extends DefaultSelection {
++
++  /**
++   * The database connection.
++   *
++   * @var \Drupal\Core\Database\Connection
++   */
++  protected $connection;
++
++  /**
++   * The user storage.
++   *
++   * @var \Drupal\user\UserStorageInterface
++   */
++  protected $userStorage;
++
++
++  /**
++   * The OG membership manager.
++   *
++   * @var \Drupal\og\MembershipManagerInterface
++   */
++  protected $membershipManager;
++
++  /**
++   * Constructs a new UserSelection object.
++   *
++   * @param array $configuration
++   *   A configuration array containing information about the plugin instance.
++   * @param string $plugin_id
++   *   The plugin_id for the plugin instance.
++   * @param mixed $plugin_definition
++   *   The plugin implementation definition.
++   * @param \Drupal\Core\Entity\EntityManagerInterface $entity_manager
++   *   The entity manager service.
++   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
++   *   The module handler service.
++   * @param \Drupal\Core\Session\AccountInterface $current_user
++   *   The current user.
++   * @param \Drupal\Core\Database\Connection $connection
++   *   The database connection.
++   * @param \Drupal\og\MembershipManagerInterface $membership_manager
++   *   The OG membership manager.
++   */
++  public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityManagerInterface $entity_manager, ModuleHandlerInterface $module_handler, AccountInterface $current_user, Connection $connection, MembershipManagerInterface $membership_manager) {
++    parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_manager, $module_handler, $current_user);
++
++    $this->connection = $connection;
++    $this->userStorage = $entity_manager->getStorage('user');
++    $this->membershipManager = $membership_manager;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
++    return new static(
++      $configuration,
++      $plugin_id,
++      $plugin_definition,
++      $container->get('entity.manager'),
++      $container->get('module_handler'),
++      $container->get('current_user'),
++      $container->get('database'),
++      $container->get('og.membership_manager')
++    );
++  }
++
++  /**
++   * Get the selection handler of the field.
++   *
++   * @return Drupal\Core\Entity\Plugin\EntityReferenceSelection\DefaultSelection
++   *   Returns the selection handler.
++   */
++  public function getSelectionHandler() {
++    $options = [
++      'target_type' => 'user',
++    ];
++    return \Drupal::service('plugin.manager.entity_reference_selection')->getInstance($options);
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function buildEntityQuery($match = NULL, $match_operator = 'CONTAINS') {
++    $query = parent::buildEntityQuery($match, $match_operator);
++
++    // Anon can't be a group member.
++    $query->condition('uid', 0, '<>');
++
++    // The user entity doesn't have a label column.
++    if (isset($match)) {
++      $query->condition('name', $match, $match_operator);
++    }
++
++    // Adding the permission check is sadly insufficient for users: core
++    // requires us to also know about the concept of 'blocked' and 'active'.
++    if (!$this->currentUser->hasPermission('administer users')) {
++      $query->condition('status', 1);
++    }
++
++    // @todo implement an easier, more consistent way to get the group type. At
++    // the moment, this works either for checkboxes or OG Autocomplete widget
++    // types on entities that have a getGroup() method. It also does not work
++    // properly every time; for example during validation.
++    $group = NULL;
++    if (isset($this->configuration['entity'])) {
++      $entity = $this->configuration['entity'];
++      $group = is_callable([$entity, 'getGroup']) ? $entity->getGroup() : NULL;
++    }
++
++    if (isset($this->configuration['handler_settings']['group'])) {
++      $group = $this->configuration['handler_settings']['group'];
++    }
++
++    if ($group === NULL) {
++      return $query;
++    }
++
++    // @todo Excluding group members with a join would perform much better than
++    // loading each membership associated with the group.
++    $member_uids = [];
++    /** @var \Drupal\og\Entity\OgMembership $membership */
++    foreach ($this->membershipManager->getGroupMemberships($group) as $membership) {
++      $member_uids[] = $membership->getOwner()->id();
++    }
++
++    if (count($member_uids) > 0) {
++      $query->condition('uid', $member_uids, 'NOT IN');
++    }
++
++    return $query;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function createNewEntity($entity_type_id, $bundle, $label, $uid) {
++    $user = parent::createNewEntity($entity_type_id, $bundle, $label, $uid);
++
++    // In order to create a referenceable user, it needs to be active.
++    if (!$this->currentUser->hasPermission('administer users')) {
++      /** @var \Drupal\user\UserInterface $user */
++      $user->activate();
++    }
++
++    return $user;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function validateReferenceableNewEntities(array $entities) {
++    $entities = parent::validateReferenceableNewEntities($entities);
++    // Mirror the conditions checked in buildEntityQuery().
++    if (!$this->currentUser->hasPermission('administer users')) {
++      $entities = array_filter($entities, function ($user) {
++        /** @var \Drupal\user\UserInterface $user */
++        return $user->isActive();
++      });
++    }
++    return $entities;
++  }
++
++}
+diff --git a/src/Plugin/Field/FieldFormatter/GroupSubscribeFormatter.php b/src/Plugin/Field/FieldFormatter/GroupSubscribeFormatter.php
+index ab3431c3..6bbf6a9c 100644
+--- a/src/Plugin/Field/FieldFormatter/GroupSubscribeFormatter.php
++++ b/src/Plugin/Field/FieldFormatter/GroupSubscribeFormatter.php
+@@ -10,6 +10,7 @@
+ use Drupal\Core\Routing\RedirectDestinationTrait;
+ use Drupal\Core\Session\AccountInterface;
+ use Drupal\Core\Url;
++use Drupal\og\GroupTypeManagerInterface;
+ use Drupal\og\Og;
+ use Drupal\og\OgAccessInterface;
+ use Drupal\og\OgMembershipInterface;
+@@ -47,6 +48,13 @@ class GroupSubscribeFormatter extends FormatterBase implements ContainerFactoryP
+    */
+   protected $ogAccess;
+ 
++  /**
++   * The group manager.
++   *
++   * @var \Drupal\og\GroupTypeManagerInterface
++   */
++  protected $groupTypeManager;
++
+   /**
+    * Constructs a new GroupSubscribeFormatter object.
+    *
+@@ -70,12 +78,15 @@ class GroupSubscribeFormatter extends FormatterBase implements ContainerFactoryP
+    *   The current user.
+    * @param \Drupal\og\OgAccessInterface $og_access
+    *   The OG access service.
++   * @param \Drupal\og\GroupTypeManagerInterface $group_manager
++   *   The group manager.
+    */
+-  public function __construct($plugin_id, $plugin_definition, FieldDefinitionInterface $field_definition, array $settings, $label, $view_mode, array $third_party_settings, EntityManagerInterface $entity_manager, AccountInterface $current_user, OgAccessInterface $og_access) {
++  public function __construct($plugin_id, $plugin_definition, FieldDefinitionInterface $field_definition, array $settings, $label, $view_mode, array $third_party_settings, EntityManagerInterface $entity_manager, AccountInterface $current_user, OgAccessInterface $og_access, GroupTypeManagerInterface $group_manager) {
+     parent::__construct($plugin_id, $plugin_definition, $field_definition, $settings, $label, $view_mode, $third_party_settings, $entity_manager);
+ 
+     $this->currentUser = $current_user;
+     $this->ogAccess = $og_access;
++    $this->groupTypeManager = $group_manager;
+   }
+ 
+   /**
+@@ -92,7 +103,8 @@ public static function create(ContainerInterface $container, array $configuratio
+       $configuration['third_party_settings'],
+       $container->get('entity.manager'),
+       $container->get('current_user'),
+-      $container->get('og.access')
++      $container->get('og.access'),
++      $container->get('og.group_type_manager')
+     );
+   }
+ 
+@@ -141,6 +153,7 @@ public function viewElements(FieldItemListInterface $items, $langcode) {
+         $parameters = [
+           'entity_type_id' => $group->getEntityTypeId(),
+           'group' => $group->id(),
++          'og_membership_type' => $this->groupTypeManager->getGroupMembershipType($group->getEntityTypeId(), $group->bundle()),
+         ];
+ 
+         $url = Url::fromRoute('og.subscribe', $parameters);
+diff --git a/src/Plugin/Field/FieldWidget/OgAutocomplete.php b/src/Plugin/Field/FieldWidget/OgAutocomplete.php
+new file mode 100644
+index 00000000..0a2aa404
+--- /dev/null
++++ b/src/Plugin/Field/FieldWidget/OgAutocomplete.php
+@@ -0,0 +1,48 @@
++<?php
++
++namespace Drupal\og\Plugin\Field\FieldWidget;
++
++use Symfony\Component\Validator\ConstraintViolationInterface;
++use Drupal\Core\Field\FieldItemListInterface;
++use Drupal\Core\Field\Plugin\Field\FieldWidget\EntityReferenceAutocompleteWidget;
++use Drupal\Core\Form\FormStateInterface;
++
++/**
++ * Plugin implementation of the 'og_autocomplete' widget.
++ *
++ * @FieldWidget(
++ *   id = "og_autocomplete",
++ *   label = @Translation("OG context autocomplete"),
++ *   description = @Translation("An autocomplete widget that takes OG group context into account"),
++ *   field_types = {
++ *     "entity_reference"
++ *   }
++ * )
++ */
++class OgAutocomplete extends EntityReferenceAutocompleteWidget {
++
++  /**
++   * {@inheritdoc}
++   */
++  public function formElement(FieldItemListInterface $items, $delta, array $element, array &$form, FormStateInterface $form_state) {
++    $element = parent::formElement($items, $delta, $element, $form, $form_state);
++
++    $entity = $items->getEntity();
++    if (!is_callable([$entity, 'getGroup'])) {
++      return $element;
++    }
++
++    $element['target_id']['#type'] = 'og_autocomplete';
++    $element['target_id']['#og_group'] = $entity->getGroup();
++
++    return $element;
++  }
++
++  /**
++   * {@inheritdoc}
++   */
++  public function errorElement(array $element, ConstraintViolationInterface $error, array $form, FormStateInterface $form_state) {
++    return $element;
++  }
++
++}
+diff --git a/src/Plugin/Validation/Constraint/UniqueOgMembershipConstraint.php b/src/Plugin/Validation/Constraint/UniqueOgMembershipConstraint.php
+new file mode 100644
+index 00000000..905bc6a2
+--- /dev/null
++++ b/src/Plugin/Validation/Constraint/UniqueOgMembershipConstraint.php
+@@ -0,0 +1,26 @@
++<?php
++
++namespace Drupal\og\Plugin\Validation\Constraint;
++
++use Symfony\Component\Validator\Constraint;
++
++/**
++ * Entity Reference valid reference constraint.
++ *
++ * Verifies that referenced entities are valid.
++ *
++ * @Constraint(
++ *   id = "UniqueOgMembership",
++ *   label = @Translation("Unique OG membership", context = "Validation")
++ * )
++ */
++class UniqueOgMembershipConstraint extends Constraint {
++
++  /**
++   * Not a unique membership group message.
++   *
++   * @var string
++   */
++  public $NotUniqueMembership = 'The user %user is already a member in this group';
++
++}
+diff --git a/src/Plugin/Validation/Constraint/UniqueOgMembershipConstraintValidator.php b/src/Plugin/Validation/Constraint/UniqueOgMembershipConstraintValidator.php
+new file mode 100644
+index 00000000..c830cc67
+--- /dev/null
++++ b/src/Plugin/Validation/Constraint/UniqueOgMembershipConstraintValidator.php
+@@ -0,0 +1,46 @@
++<?php
++
++namespace Drupal\og\Plugin\Validation\Constraint;
++
++use Symfony\Component\Validator\Constraint;
++use Symfony\Component\Validator\ConstraintValidator;
++
++/**
++ * Ensures that new members added to a group do not already exist.
++ */
++class UniqueOgMembershipConstraintValidator extends ConstraintValidator {
++
++  /**
++   * {@inheritdoc}
++   */
++  public function validate($value, Constraint $constraint) {
++    /* @var \Drupal\Core\Field\FieldItemInterface $value */
++    if (!isset($value)) {
++      return;
++    }
++
++    /* @var \Drupal\og\Entity\OgMembership $entity */
++    $entity = $value->getEntity();
++
++    // Only applicable to new memberships.
++    if (!$entity->isNew()) {
++      return;
++    }
++
++    // The default entity reference constraint adds a violation in this case.
++    $value = $value->getValue();
++    if (!isset($value[0]) || !isset($value[0]['target_id'])) {
++      return;
++    }
++
++    $new_member_uid = $value[0]['target_id'];
++    $membership_manager = \Drupal::service('og.membership_manager');
++    foreach ($membership_manager->getGroupMemberships($entity->getGroup()) as $membership) {
++      if ((string) $membership->getOwner()->id() === (string) $new_member_uid) {
++        $this->context->addViolation($constraint->NotUniqueMembership, ['%user' => $membership->getOwner()->getDisplayName()]);
++        return;
++      }
++    }
++  }
++
++}
+diff --git a/src/Plugin/Validation/Constraint/ValidOgRoleConstraint.php b/src/Plugin/Validation/Constraint/ValidOgRoleConstraint.php
+new file mode 100644
+index 00000000..6fdbc8bd
+--- /dev/null
++++ b/src/Plugin/Validation/Constraint/ValidOgRoleConstraint.php
+@@ -0,0 +1,24 @@
++<?php
++
++namespace Drupal\og\Plugin\Validation\Constraint;
++
++use Symfony\Component\Validator\Constraint;
++
++/**
++ * Ensures that a valid OG role for the group entity type/bundle is selected.
++ *
++ * @Constraint(
++ *   id = "ValidOgRole",
++ *   label = @Translation("OG Role valid reference", context = "Validation")
++ * )
++ */
++class ValidOgRoleConstraint extends Constraint {
++
++  /**
++   * Not a valid role message.
++   *
++   * @var string
++   */
++  public $NotValidRole = 'Invalid role selected.';
++
++}
+diff --git a/src/Plugin/Validation/Constraint/ValidOgRoleConstraintValidator.php b/src/Plugin/Validation/Constraint/ValidOgRoleConstraintValidator.php
+new file mode 100644
+index 00000000..e54730d8
+--- /dev/null
++++ b/src/Plugin/Validation/Constraint/ValidOgRoleConstraintValidator.php
+@@ -0,0 +1,40 @@
++<?php
++
++namespace Drupal\og\Plugin\Validation\Constraint;
++
++use Symfony\Component\Validator\Constraint;
++use Symfony\Component\Validator\ConstraintValidator;
++
++/**
++ * Checks if referenced OG role is valid.
++ */
++class ValidOgRoleConstraintValidator extends ConstraintValidator {
++
++  /**
++   * {@inheritdoc}
++   */
++  public function validate($value, Constraint $constraint) {
++    /* @var \Drupal\Core\Field\FieldItemInterface $value */
++    if (!isset($value)) {
++      return;
++    }
++
++    $entity = $value->getEntity();
++    if (!$entity) {
++      // Entity with that entity ID does not exists. This could happen if a
++      // stale entity is passed for validation.
++      return;
++    }
++
++    $group_type = $entity->getGroup()->getEntityTypeId();
++    $group_bundle = $entity->getGroup()->bundle();
++
++    foreach ($value->referencedEntities() as $og_role) {
++      if ($og_role->getGroupType() !== $group_type || $og_role->getGroupBundle() !== $group_bundle) {
++        $this->context->addViolation($constraint->NotValidRole);
++      }
++    }
++
++  }
++
++}
+diff --git a/tests/src/Functional/GroupSubscribeFormatterTest.php b/tests/src/Functional/GroupSubscribeFormatterTest.php
+index edfe0e96..35168460 100644
+--- a/tests/src/Functional/GroupSubscribeFormatterTest.php
++++ b/tests/src/Functional/GroupSubscribeFormatterTest.php
+@@ -20,7 +20,7 @@ class GroupSubscribeFormatterTest extends BrowserTestBase {
+   /**
+    * {@inheritdoc}
+    */
+-  public static $modules = ['node', 'og'];
++  public static $modules = ['node', 'og', 'options'];
+ 
+   /**
+    * Test entity group.
+diff --git a/tests/src/Kernel/Access/AccessByOgMembershipTest.php b/tests/src/Kernel/Access/AccessByOgMembershipTest.php
+index 56922cc2..f727251b 100644
+--- a/tests/src/Kernel/Access/AccessByOgMembershipTest.php
++++ b/tests/src/Kernel/Access/AccessByOgMembershipTest.php
+@@ -34,6 +34,7 @@ class AccessByOgMembershipTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Access/OgAccessHookTest.php b/tests/src/Kernel/Access/OgAccessHookTest.php
+index 8d2dc2e7..754fc5be 100644
+--- a/tests/src/Kernel/Access/OgAccessHookTest.php
++++ b/tests/src/Kernel/Access/OgAccessHookTest.php
+@@ -29,6 +29,7 @@ class OgAccessHookTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Access/OgEntityAccessTest.php b/tests/src/Kernel/Access/OgEntityAccessTest.php
+index d0e83b2b..7a1d0c8c 100644
+--- a/tests/src/Kernel/Access/OgEntityAccessTest.php
++++ b/tests/src/Kernel/Access/OgEntityAccessTest.php
+@@ -26,6 +26,7 @@ class OgEntityAccessTest extends KernelTestBase {
+     'user',
+     'field',
+     'og',
++    'options',
+     'entity_test',
+   ];
+ 
+diff --git a/tests/src/Kernel/Access/OgGroupContentOperationAccessTest.php b/tests/src/Kernel/Access/OgGroupContentOperationAccessTest.php
+index 99045d49..c57fcc82 100644
+--- a/tests/src/Kernel/Access/OgGroupContentOperationAccessTest.php
++++ b/tests/src/Kernel/Access/OgGroupContentOperationAccessTest.php
+@@ -31,6 +31,7 @@ class OgGroupContentOperationAccessTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Console/DrupalConsoleAddFieldTest.php b/tests/src/Kernel/Console/DrupalConsoleAddFieldTest.php
+index 99ae6e63..de047122 100644
+--- a/tests/src/Kernel/Console/DrupalConsoleAddFieldTest.php
++++ b/tests/src/Kernel/Console/DrupalConsoleAddFieldTest.php
+@@ -24,6 +24,7 @@ class DrupalConsoleAddFieldTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Entity/EntityCreateAccessTest.php b/tests/src/Kernel/Entity/EntityCreateAccessTest.php
+index 0c919b11..38f4ce61 100644
+--- a/tests/src/Kernel/Entity/EntityCreateAccessTest.php
++++ b/tests/src/Kernel/Entity/EntityCreateAccessTest.php
+@@ -31,6 +31,7 @@ class EntityCreateAccessTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Entity/GetBundleByBundleTest.php b/tests/src/Kernel/Entity/GetBundleByBundleTest.php
+index 21be0dce..6930df48 100644
+--- a/tests/src/Kernel/Entity/GetBundleByBundleTest.php
++++ b/tests/src/Kernel/Entity/GetBundleByBundleTest.php
+@@ -24,6 +24,7 @@ class GetBundleByBundleTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Entity/GetGroupContentTest.php b/tests/src/Kernel/Entity/GetGroupContentTest.php
+index 93f34934..7c5a70f1 100644
+--- a/tests/src/Kernel/Entity/GetGroupContentTest.php
++++ b/tests/src/Kernel/Entity/GetGroupContentTest.php
+@@ -27,6 +27,7 @@ class GetGroupContentTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Entity/GetMembershipsTest.php b/tests/src/Kernel/Entity/GetMembershipsTest.php
+index 9e657057..6a779e16 100644
+--- a/tests/src/Kernel/Entity/GetMembershipsTest.php
++++ b/tests/src/Kernel/Entity/GetMembershipsTest.php
+@@ -25,6 +25,7 @@ class GetMembershipsTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Entity/GetUserGroupsTest.php b/tests/src/Kernel/Entity/GetUserGroupsTest.php
+index 3a649a9a..d342c5bf 100644
+--- a/tests/src/Kernel/Entity/GetUserGroupsTest.php
++++ b/tests/src/Kernel/Entity/GetUserGroupsTest.php
+@@ -24,6 +24,7 @@ class GetUserGroupsTest extends KernelTestBase {
+     'user',
+     'field',
+     'og',
++    'options',
+     'entity_test',
+   ];
+ 
+diff --git a/tests/src/Kernel/Entity/GroupAudienceTest.php b/tests/src/Kernel/Entity/GroupAudienceTest.php
+index da62dabc..c4474204 100644
+--- a/tests/src/Kernel/Entity/GroupAudienceTest.php
++++ b/tests/src/Kernel/Entity/GroupAudienceTest.php
+@@ -30,6 +30,7 @@ class GroupAudienceTest extends KernelTestBase {
+     'entity_test',
+     'field',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Entity/GroupMembershipManagerTest.php b/tests/src/Kernel/Entity/GroupMembershipManagerTest.php
+index f4fdaaca..6e3bb8c3 100644
+--- a/tests/src/Kernel/Entity/GroupMembershipManagerTest.php
++++ b/tests/src/Kernel/Entity/GroupMembershipManagerTest.php
+@@ -30,6 +30,7 @@ class GroupMembershipManagerTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Entity/GroupTypeTest.php b/tests/src/Kernel/Entity/GroupTypeTest.php
+index e0617abb..15e035cd 100644
+--- a/tests/src/Kernel/Entity/GroupTypeTest.php
++++ b/tests/src/Kernel/Entity/GroupTypeTest.php
+@@ -15,7 +15,7 @@ class GroupTypeTest extends KernelTestBase {
+   /**
+    * {@inheritdoc}
+    */
+-  public static $modules = ['field', 'node', 'og', 'system', 'user'];
++  public static $modules = ['field', 'node', 'og', 'options', 'system', 'user'];
+ 
+   /**
+    * The group type manager.
+diff --git a/tests/src/Kernel/Entity/OgMembershipRoleReferenceTest.php b/tests/src/Kernel/Entity/OgMembershipRoleReferenceTest.php
+index ebc9c910..c9329d56 100644
+--- a/tests/src/Kernel/Entity/OgMembershipRoleReferenceTest.php
++++ b/tests/src/Kernel/Entity/OgMembershipRoleReferenceTest.php
+@@ -21,11 +21,12 @@ class OgMembershipRoleReferenceTest extends KernelTestBase {
+    * {@inheritdoc}
+    */
+   public static $modules = [
+-    'og',
+     'field',
+     'node',
+-    'user',
++    'og',
++    'options',
+     'system',
++    'user',
+   ];
+ 
+   /**
+diff --git a/tests/src/Kernel/Entity/OgMembershipTest.php b/tests/src/Kernel/Entity/OgMembershipTest.php
+index 339cbeb6..ee7e5225 100644
+--- a/tests/src/Kernel/Entity/OgMembershipTest.php
++++ b/tests/src/Kernel/Entity/OgMembershipTest.php
+@@ -31,6 +31,7 @@ class OgMembershipTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Entity/OgRoleTest.php b/tests/src/Kernel/Entity/OgRoleTest.php
+index 68ada318..9574836b 100644
+--- a/tests/src/Kernel/Entity/OgRoleTest.php
++++ b/tests/src/Kernel/Entity/OgRoleTest.php
+@@ -24,6 +24,7 @@ class OgRoleTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/Entity/OgStandardReferenceItemTest.php b/tests/src/Kernel/Entity/OgStandardReferenceItemTest.php
+index ca3e7142..ddf2c563 100644
+--- a/tests/src/Kernel/Entity/OgStandardReferenceItemTest.php
++++ b/tests/src/Kernel/Entity/OgStandardReferenceItemTest.php
+@@ -19,7 +19,14 @@ class OgStandardReferenceItemTest extends KernelTestBase {
+   /**
+    * {@inheritdoc}
+    */
+-  public static $modules = ['user', 'entity_test', 'field', 'og', 'system'];
++  public static $modules = [
++    'user',
++    'entity_test',
++    'field',
++    'og',
++    'options',
++    'system',
++  ];
+ 
+   protected $bundles;
+   protected $fieldName;
+diff --git a/tests/src/Kernel/Entity/ReferenceStringIdTest.php b/tests/src/Kernel/Entity/ReferenceStringIdTest.php
+index 4a42d8ea..e4e363b6 100644
+--- a/tests/src/Kernel/Entity/ReferenceStringIdTest.php
++++ b/tests/src/Kernel/Entity/ReferenceStringIdTest.php
+@@ -18,7 +18,14 @@ class ReferenceStringIdTest extends KernelTestBase {
+   /**
+    * {@inheritdoc}
+    */
+-  public static $modules = ['user', 'entity_test', 'field', 'og', 'system'];
++  public static $modules = [
++    'user',
++    'entity_test',
++    'field',
++    'og',
++    'options',
++    'system',
++  ];
+ 
+   /**
+    * Array of test bundles. The first is a group, the second group content.
+diff --git a/tests/src/Kernel/Entity/SelectionHandlerTest.php b/tests/src/Kernel/Entity/SelectionHandlerTest.php
+index 68bb2fdc..7dfeee14 100644
+--- a/tests/src/Kernel/Entity/SelectionHandlerTest.php
++++ b/tests/src/Kernel/Entity/SelectionHandlerTest.php
+@@ -35,6 +35,7 @@ class SelectionHandlerTest extends KernelTestBase {
+     'entity_reference',
+     'node',
+     'og',
++    'options',
+   ];
+ 
+   /**
+diff --git a/tests/src/Kernel/EntityReference/Views/OgStandardReferenceRelationshipTest.php b/tests/src/Kernel/EntityReference/Views/OgStandardReferenceRelationshipTest.php
+index 03beeacf..1a12e55d 100644
+--- a/tests/src/Kernel/EntityReference/Views/OgStandardReferenceRelationshipTest.php
++++ b/tests/src/Kernel/EntityReference/Views/OgStandardReferenceRelationshipTest.php
+@@ -43,6 +43,7 @@ class OgStandardReferenceRelationshipTest extends ViewsKernelTestBase {
+     'views',
+     'og_standard_reference_test_views',
+     'og',
++    'options',
+   ];
+ 
+   /**
+diff --git a/tests/src/Kernel/Form/GroupSubscribeFormTest.php b/tests/src/Kernel/Form/GroupSubscribeFormTest.php
+index b4d86724..7c705bab 100644
+--- a/tests/src/Kernel/Form/GroupSubscribeFormTest.php
++++ b/tests/src/Kernel/Form/GroupSubscribeFormTest.php
+@@ -30,6 +30,7 @@ class GroupSubscribeFormTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+   ];
+ 
+   /**
+diff --git a/tests/src/Kernel/GroupTypeConditionTest.php b/tests/src/Kernel/GroupTypeConditionTest.php
+index c4089673..af4235bf 100644
+--- a/tests/src/Kernel/GroupTypeConditionTest.php
++++ b/tests/src/Kernel/GroupTypeConditionTest.php
+@@ -22,6 +22,7 @@ class GroupTypeConditionTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'system',
+     'user',
+   ];
+diff --git a/tests/src/Kernel/OgDeleteOrphansTest.php b/tests/src/Kernel/OgDeleteOrphansTest.php
+index 9ef66c0f..b6a0d1b7 100644
+--- a/tests/src/Kernel/OgDeleteOrphansTest.php
++++ b/tests/src/Kernel/OgDeleteOrphansTest.php
+@@ -27,6 +27,7 @@ class OgDeleteOrphansTest extends KernelTestBase {
+     'entity_reference',
+     'node',
+     'og',
++    'options',
+   ];
+ 
+   /**
+diff --git a/tests/src/Kernel/OgRoleManagerTest.php b/tests/src/Kernel/OgRoleManagerTest.php
+index 34747d0e..dbf761da 100644
+--- a/tests/src/Kernel/OgRoleManagerTest.php
++++ b/tests/src/Kernel/OgRoleManagerTest.php
+@@ -24,6 +24,7 @@ class OgRoleManagerTest extends KernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+   ];
+ 
+   /**
+diff --git a/tests/src/Kernel/Views/OgAdminMembersViewTest.php b/tests/src/Kernel/Views/OgAdminMembersViewTest.php
+index a66d3b6c..53500b05 100644
+--- a/tests/src/Kernel/Views/OgAdminMembersViewTest.php
++++ b/tests/src/Kernel/Views/OgAdminMembersViewTest.php
+@@ -28,6 +28,7 @@ class OgAdminMembersViewTest extends ViewsKernelTestBase {
+     'field',
+     'node',
+     'og',
++    'options',
+     'views',
+   ];
+ 
+diff --git a/tests/src/Unit/CreateMembershipTest.php b/tests/src/Unit/CreateMembershipTest.php
+index 033996a7..02f209df 100644
+--- a/tests/src/Unit/CreateMembershipTest.php
++++ b/tests/src/Unit/CreateMembershipTest.php
+@@ -8,6 +8,7 @@
+ use Drupal\Core\Entity\EntityStorageInterface;
+ use Drupal\Core\Entity\EntityTypeManagerInterface;
+ use Drupal\og\MembershipManager;
++use Drupal\og\GroupTypeManagerInterface;
+ use Drupal\og\OgGroupAudienceHelperInterface;
+ use Drupal\og\OgMembershipInterface;
+ use Drupal\Tests\UnitTestCase;
+@@ -36,6 +37,13 @@ class CreateMembershipTest extends UnitTestCase {
+    */
+   protected $entityTypeManager;
+ 
++  /**
++   * The group type manager.
++   *
++   * @var \Drupal\og\GroupTypeManager|\Prophecy\Prophecy\ObjectProphecy
++   */
++  protected $groupTypeManager;
++
+   /**
+    * The OG group audience helper.
+    *
+@@ -97,6 +105,7 @@ public function setUp() {
+     $this->entityStorage = $this->prophesize(EntityStorageInterface::class);
+     $this->entityManager = $this->prophesize(EntityManagerInterface::class);
+     $this->entityTypeManager = $this->prophesize(EntityTypeManagerInterface::class);
++    $this->groupTypeManager = $this->prophesize(GroupTypeManagerInterface::class);
+     $this->groupAudienceHelper = $this->prophesize(OgGroupAudienceHelperInterface::class);
+ 
+     $this->entityManager->getStorage('og_membership')
+@@ -105,6 +114,9 @@ public function setUp() {
+     $this->entityManager->getEntityTypeFromClass('Drupal\og\Entity\OgMembership')
+       ->willReturn('og_membership');
+ 
++    $this->groupTypeManager->getGroupMembershipType($this->entityTypeId, $this->bundle)
++      ->willReturn('default');
++
+     // Create a mocked Og Membership entity.
+     /** @var \Drupal\og\OgMembershipInterface|\Prophecy\Prophecy\ObjectProphecy $membership_entity */
+     $membership_entity = $this->prophesize(OgMembershipInterface::class);
+@@ -116,6 +128,12 @@ public function setUp() {
+     // Create a mocked test group.
+     $this->group = $this->prophesize(EntityInterface::class);
+ 
++    $this->group->getEntityTypeId()
++      ->willReturn($this->entityTypeId);
++
++    $this->group->bundle()
++      ->willReturn($this->bundle);
++
+     // Create a mocked test user.
+     $this->user = $this->prophesize(UserInterface::class);
+ 
+@@ -138,7 +156,7 @@ public function setUp() {
+    * @covers ::createMembership
+    */
+   public function testNewGroup() {
+-    $membership_manager = new MembershipManager($this->entityTypeManager->reveal(), $this->groupAudienceHelper->reveal());
++    $membership_manager = new MembershipManager($this->entityTypeManager->reveal(), $this->groupTypeManager->reveal(), $this->groupAudienceHelper->reveal());
+     $membership = $membership_manager->createMembership($this->group->reveal(), $this->user->reveal());
+     $this->assertInstanceOf(OgMembershipInterface::class, $membership);
+   }
+diff --git a/tests/src/Unit/GroupSubscribeFormatterTest.php b/tests/src/Unit/GroupSubscribeFormatterTest.php
+index 86698122..311c85b4 100644
+--- a/tests/src/Unit/GroupSubscribeFormatterTest.php
++++ b/tests/src/Unit/GroupSubscribeFormatterTest.php
+@@ -11,7 +11,7 @@
+ use Drupal\Core\Field\FieldItemListInterface;
+ use Drupal\Core\Session\AccountInterface;
+ use Drupal\Core\Session\AccountProxyInterface;
+-use Drupal\og\GroupTypeManager;
++use Drupal\og\GroupTypeManagerInterface;
+ use Drupal\og\MembershipManagerInterface;
+ use Drupal\og\OgAccessInterface;
+ use Drupal\og\OgMembershipInterface;
+@@ -155,7 +155,7 @@ public function setUp() {
+     $this->fieldDefinitionInterface = $this->prophesize(FieldDefinitionInterface::class);
+     $this->fieldItemList = $this->prophesize(FieldItemListInterface::class);
+     $this->group = $this->prophesize(EntityInterface::class);
+-    $this->groupTypeManager = $this->prophesize(GroupTypeManager::class);
++    $this->groupTypeManager = $this->prophesize(GroupTypeManagerInterface::class);
+     $this->membershipManager = $this->prophesize(MembershipManagerInterface::class);
+     $this->ogAccess = $this->prophesize(OgAccessInterface::class);
+     $this->user = $this->prophesize(AccountInterface::class);
+@@ -185,7 +185,12 @@ public function setUp() {
+       ->id()
+       ->willReturn($this->entityId);
+ 
+-    $this->groupTypeManager->isGroup($this->entityTypeId, $this->bundle)->willReturn(TRUE);
++    $this->groupTypeManager->isGroup($this->entityTypeId, $this->bundle)
++      ->willReturn(TRUE);
++
++    $this->groupTypeManager->getGroupMembershipType($this->entityTypeId, $this->bundle)
++      ->willReturn('default');
++
+     $this->entityManager->getStorage('user')
+       ->willReturn($this->entityStorage->reveal());
+ 
+@@ -353,7 +358,8 @@ protected function getElements() {
+       [],
+       $this->entityManager->reveal(),
+       $this->accountProxy->reveal(),
+-      $this->ogAccess->reveal()
++      $this->ogAccess->reveal(),
++      $this->groupTypeManager->reveal()
+     );
+     return $formatter->viewElements($this->fieldItemList->reveal(), $this->randomMachineName());
+   }
