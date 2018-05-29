@@ -183,6 +183,23 @@ class MembershipManager implements MembershipManagerInterface {
   /**
    * {@inheritdoc}
    */
+  public function getGroupMembershipCount(EntityInterface $group, array $states = [OgMembershipInterface::STATE_ACTIVE]) {
+    $query = $this->entityTypeManager
+      ->getStorage('og_membership')
+      ->getQuery()
+      ->condition('entity_id', $group->id());
+
+    if ($states) {
+      $query->condition('state', $states, 'IN');
+    }
+
+    $query->count();
+    return $query->execute();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function createMembership(EntityInterface $group, AccountInterface $user, $membership_type = NULL) {
     if (empty($membership_type)) {
       $membership_type = $this->groupTypeManager->getGroupMembershipType($group->getEntityTypeId(), $group->bundle());
