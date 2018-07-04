@@ -9,7 +9,7 @@ use Drupal\og\OgFieldsInterface;
  * Determine the group content visibility.
  *
  * @OgFields(
- *  id = OG_ACCESS_CONTENT_FIELD,
+ *  id = OgAccess::OG_ACCESS_CONTENT_FIELD,
  *  type = "node",
  *  description = @Translation("Determine the group content visibility.")
  * )

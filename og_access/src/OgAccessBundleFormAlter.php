@@ -5,6 +5,7 @@ namespace Drupal\og_access;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\og\Og;
+use Drupal\og_access\OgAccess;
 
 /**
  * Helper for og_access_form_alter().
@@ -75,7 +76,7 @@ class OgAccessBundleFormAlter {
    * Checks whether the existing bundle has OG access control enabled.
    *
    * @return bool
-   *   True if the group bundle has the OG_ACCESS_FIELD field -OR-
+   *   True if the group bundle has the OgAccess::OG_ACCESS_FIELD field -OR-
    *        if the group content bundle has the OG_CONTENT_ACCESS_FIELD field.
    *   False otherwise.
    */
@@ -84,11 +85,11 @@ class OgAccessBundleFormAlter {
       ->getFieldDefinitions($this->entityTypeId, $this->bundle);
 
     if (Og::isGroup($this->entityTypeId, $this->bundle)) {
-      return isset($field_definitions[OG_ACCESS_FIELD]);
+      return isset($field_definitions[OgAccess::OG_ACCESS_FIELD]);
     }
 
     if (Og::isGroupContent($this->entityTypeId, $this->bundle)) {
-      return isset($field_definitions[OG_ACCESS_CONTENT_FIELD]);
+      return isset($field_definitions[OgAccess::OG_ACCESS_CONTENT_FIELD]);
     }
 
     return FALSE;
