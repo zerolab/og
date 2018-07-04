@@ -6,12 +6,15 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\og\Og;
 use Drupal\og_access\OgAccess;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\Core\StringTranslation\TranslationInterface;
 
 /**
  * Helper for og_access_form_alter().
  */
 class OgAccessBundleFormAlter {
-
+  use StringTranslationTrait;
+  
   /**
    * The entity bundle.
    *
@@ -39,8 +42,9 @@ class OgAccessBundleFormAlter {
    * @param \Drupal\Core\Entity\EntityInterface $entity
    *   The entity object.
    */
-  public function __construct(EntityInterface $entity) {
+  public function __construct(EntityInterface $entity, TranslationInterface $string_translation) {
     $this->entity = $entity;
+    $this->stringTranslation = $string_translation;
   }
 
   /**
@@ -60,8 +64,8 @@ class OgAccessBundleFormAlter {
 
     $form['og']['og_enable_access'] = [
       '#type' => 'checkbox',
-      '#title' => t('Restrict access to group members'),
-      '#description' => t('Enable OG access control. Provides a new field that determines the group/group content visibility. Public groups can have member-only content. Any public group content belonging to a private group will be restricted to the members of that group only.'),
+      '#title' => $this->t('Restrict access to group members'),
+      '#description' => $this->t('Enable OG access control. Provides a new field that determines the group/group content visibility. Public groups can have member-only content. Any public group content belonging to a private group will be restricted to the members of that group only.'),
       '#default_value' => $this->bundle ? $this->hasAccessControl() : FALSE,
       '#states' => [
         'visible' => [
