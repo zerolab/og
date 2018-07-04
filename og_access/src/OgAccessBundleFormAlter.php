@@ -5,7 +5,6 @@ namespace Drupal\og_access;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\og\Og;
-use Drupal\og_access\OgAccess;
 use Drupal\Core\StringTranslation\TranslationInterface;
 
 /**
