@@ -6,7 +6,6 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\og\Og;
 use Drupal\og_access\OgAccess;
-use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\StringTranslation\TranslationInterface;
 
 /**
@@ -14,7 +13,7 @@ use Drupal\Core\StringTranslation\TranslationInterface;
  */
 class OgAccessBundleFormAlter {
   use StringTranslationTrait;
-  
+
   /**
    * The entity bundle.
    *
@@ -41,6 +40,8 @@ class OgAccessBundleFormAlter {
    *
    * @param \Drupal\Core\Entity\EntityInterface $entity
    *   The entity object.
+   * @param Drupal\Core\StringTranslation\TranslationInterface $string_translation
+   *   The string translation object.
    */
   public function __construct(EntityInterface $entity, TranslationInterface $string_translation) {
     $this->entity = $entity;

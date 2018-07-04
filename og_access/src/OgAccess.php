@@ -1,11 +1,12 @@
 <?php
+
 namespace Drupal\og_access;
 
 /**
- * Description of newPHPClass
+ * Helper class for constants.
  */
 class OgAccess {
-  
+
   /**
    * The access realm of group member.
    */
@@ -30,4 +31,5 @@ class OgAccess {
    * Private group/group content access.
    */
   const OG_ACCESS_PRIVATE = 1;
+
 }
