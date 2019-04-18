@@ -10,5 +10,5 @@
  */
 function og_access_install() {
   // Rebuild node access permissions.
-  node_access_rebuild();
+  node_access_rebuild(TRUE);
 }
