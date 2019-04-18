@@ -1,0 +1,16 @@
+<?php
+
+use Drupal\og\Og;
+
+/**
+ * @file
+ * Install/update/uninstall hook implementations.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function og_access_install() {
+  // Rebuild node access permissions.
+  node_access_rebuild();
+}
