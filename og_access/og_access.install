@@ -1,7 +1,5 @@
 <?php
 
-use Drupal\og\Og;
-
 /**
  * @file
  * Install/update/uninstall hook implementations.
