@@ -9,6 +9,6 @@
  * Implements hook_install().
  */
 function og_access_install() {
-  // Rebuild node access permissions.
+  // Mark node access permissions for rebuild.
   node_access_needs_rebuild(TRUE);
 }
